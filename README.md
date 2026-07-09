@@ -78,6 +78,7 @@ docker compose down
 | PUT/PATCH | `/api/tickets/{id}/` | 更新工单 |
 | DELETE | `/api/tickets/{id}/` | 删除工单 |
 | POST | `/api/tickets/{id}/assign/` | 分配或取消分配工单处理人 |
+| GET | `/api/tickets/{id}/audit-logs/` | 查询工单操作历史 |
 | GET | `/api/tickets/{id}/comments/` | 查询工单评论和处理记录 |
 | POST | `/api/tickets/{id}/comments/` | 新增工单评论或处理记录 |
 
