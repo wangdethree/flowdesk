@@ -38,6 +38,9 @@ curl http://127.0.0.1:8000/api/health/
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/health/` | 健康检查 |
+| GET | `/api/schema/` | OpenAPI schema |
+| GET | `/api/docs/` | Swagger UI 接口文档 |
+| GET | `/api/redoc/` | ReDoc 接口文档 |
 | POST | `/api/users/register/` | 用户注册 |
 | POST | `/api/users/login/` | JWT 登录 |
 | POST | `/api/users/token/refresh/` | 刷新 access token |
