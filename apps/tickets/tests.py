@@ -441,6 +441,120 @@ class TicketAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_creator_can_assign_ticket(self):
+        """工单创建人可以把工单分配给处理人。"""
+
+        ticket = Ticket.objects.create(
+            title='待分配工单',
+            description='创建人准备把工单分配给处理人。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-assign', args=[ticket.id]),
+            {'assignee': self.assignee.id},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(ticket.assignee, self.assignee)
+        self.assertEqual(response.data['assignee'], self.assignee.id)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.creator,
+                action=AuditAction.ASSIGN,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+                metadata={
+                    'old_assignee_id': None,
+                    'new_assignee_id': self.assignee.id,
+                },
+            ).exists()
+        )
+
+    def test_staff_can_assign_any_visible_ticket(self):
+        """管理员可以分配任意工单，不受普通用户可见范围限制。"""
+
+        ticket = Ticket.objects.create(
+            title='管理员分配工单',
+            description='管理员可以统一调度工单。',
+            creator=self.other_user,
+        )
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.post(
+            reverse('ticket-assign', args=[ticket.id]),
+            {'assignee': self.assignee.id},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(ticket.assignee, self.assignee)
+
+    def test_creator_can_clear_ticket_assignee(self):
+        """assignee=null 表示取消当前处理人。"""
+
+        ticket = Ticket.objects.create(
+            title='取消分配工单',
+            description='创建人可以把处理人清空。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-assign', args=[ticket.id]),
+            {'assignee': None},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(ticket.assignee)
+        self.assertIsNone(response.data['assignee'])
+
+    def test_assignee_cannot_reassign_ticket(self):
+        """当前处理人可以处理工单，但不能把工单转派给别人。"""
+
+        ticket = Ticket.objects.create(
+            title='处理人不可转派工单',
+            description='避免普通处理人绕过创建人或管理员调度。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.post(
+            reverse('ticket-assign', args=[ticket.id]),
+            {'assignee': self.other_user.id},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ticket.assignee, self.assignee)
+
+    def test_assign_ticket_with_invalid_assignee_returns_bad_request(self):
+        """处理人 ID 不存在时返回 400，避免写入无效用户。"""
+
+        ticket = Ticket.objects.create(
+            title='非法处理人测试工单',
+            description='验证不存在的用户 ID 会被 Serializer 拦截。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-assign', args=[ticket.id]),
+            {'assignee': 999999},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_participant_can_create_and_list_ticket_comments(self):
         ticket = Ticket.objects.create(
             title='评论测试工单',
