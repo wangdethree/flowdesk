@@ -97,3 +97,24 @@ docker compose down
 - 处理人可以查看和处理分配给自己的工单，但不能删除工单。
 - 状态流转受后端限制，已关闭工单不能直接改回待处理。
 - 创建、更新、删除工单以及新增处理记录时，会自动写入审计日志。
+
+## 工单列表查询参数
+
+`GET /api/tickets/` 支持组合查询，例如：
+
+```bash
+curl "http://127.0.0.1:8000/api/tickets/?mine=assigned&overdue=true"
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `status` | 按状态筛选，例如 `open`、`in_progress` |
+| `priority` | 按优先级筛选，例如 `low`、`medium`、`high`、`urgent` |
+| `category` | 按分类筛选，例如 `bug`、`feature`、`consult`、`other` |
+| `creator` | 按创建人用户 ID 筛选 |
+| `assignee` | 按处理人用户 ID 筛选 |
+| `mine` | 查询我的工单，支持 `created` 和 `assigned` |
+| `overdue` | 是否查询超时工单，支持 `true` 和 `false` |
+| `has_assignee` | 是否查询已分配工单，支持 `true` 和 `false` |
+| `search` | 按标题和描述搜索关键词 |
+| `ordering` | 排序字段，例如 `-created_at` |
