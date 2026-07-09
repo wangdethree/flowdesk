@@ -1,3 +1,3 @@
 from django.db import models
 
-# Create your models here.
+# 工单模型会在 Day 3 开始设计。

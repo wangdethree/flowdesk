@@ -1,3 +1,3 @@
 from django.test import TestCase
 
-# Create your tests here.
+# 通用模块测试后续按功能补充。
