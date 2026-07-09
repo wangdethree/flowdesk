@@ -69,10 +69,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 
 # 第一版先用 SQLite 降低启动成本，后续再切换到 MySQL。
+# 容器环境可以通过 SQLITE_DATABASE_PATH 把数据库文件放到挂载卷里。
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': get_env('SQLITE_DATABASE_PATH', default=str(BASE_DIR / 'db.sqlite3')),
     }
 }
 

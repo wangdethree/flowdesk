@@ -1,0 +1,18 @@
+services:
+  web:
+    build: .
+    container_name: flowdesk-web
+    ports:
+      - "8000:8000"
+    environment:
+      # compose 里的值只用于本地容器演示，真实部署时应该由服务器环境注入。
+      DJANGO_SECRET_KEY: "replace-me-in-real-deployments"
+      DJANGO_DEBUG: "false"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0"
+      SQLITE_DATABASE_PATH: "/data/db.sqlite3"
+    volumes:
+      # 第一版仍使用 SQLite。只挂载数据目录，避免覆盖 /app 里的项目代码。
+      - flowdesk_sqlite:/data
+
+volumes:
+  flowdesk_sqlite:
