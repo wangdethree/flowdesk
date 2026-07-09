@@ -7,12 +7,27 @@ from rest_framework.response import Response
 
 from apps.audit.models import AuditAction
 from apps.audit.services import create_audit_log
+from apps.tickets.filters import TicketFilterBackend
 from apps.tickets.models import Ticket
 from apps.tickets.permissions import IsTicketParticipantOrStaff
 from apps.tickets.serializers import TicketCommentSerializer, TicketSerializer
 
 
 @extend_schema_view(
+    list=extend_schema(
+        parameters=[
+            OpenApiParameter('status', OpenApiTypes.STR, OpenApiParameter.QUERY, description='按工单状态筛选'),
+            OpenApiParameter('priority', OpenApiTypes.STR, OpenApiParameter.QUERY, description='按优先级筛选'),
+            OpenApiParameter('category', OpenApiTypes.STR, OpenApiParameter.QUERY, description='按分类筛选'),
+            OpenApiParameter('assignee', OpenApiTypes.INT, OpenApiParameter.QUERY, description='按处理人用户 ID 筛选'),
+            OpenApiParameter('creator', OpenApiTypes.INT, OpenApiParameter.QUERY, description='按创建人用户 ID 筛选'),
+            OpenApiParameter('mine', OpenApiTypes.STR, OpenApiParameter.QUERY, description='筛选我的工单：created 或 assigned'),
+            OpenApiParameter('overdue', OpenApiTypes.BOOL, OpenApiParameter.QUERY, description='是否只看超时工单'),
+            OpenApiParameter('has_assignee', OpenApiTypes.BOOL, OpenApiParameter.QUERY, description='是否只看已分配工单'),
+            OpenApiParameter('search', OpenApiTypes.STR, OpenApiParameter.QUERY, description='按标题和描述搜索'),
+            OpenApiParameter('ordering', OpenApiTypes.STR, OpenApiParameter.QUERY, description='排序字段，例如 -created_at'),
+        ]
+    ),
     retrieve=extend_schema(
         parameters=[
             OpenApiParameter(
@@ -67,8 +82,9 @@ class TicketViewSet(viewsets.ModelViewSet):
     # IsAuthenticated 先保证“必须登录”，IsTicketParticipantOrStaff 再判断“能不能访问这张工单”。
     permission_classes = [IsAuthenticated, IsTicketParticipantOrStaff]
 
-    # SearchFilter 支持 ?search=关键词，OrderingFilter 支持 ?ordering=-created_at。
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    # TicketFilterBackend 负责业务筛选；SearchFilter 支持 ?search=关键词；
+    # OrderingFilter 支持 ?ordering=-created_at。
+    filter_backends = [TicketFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['title', 'description']
     ordering_fields = ['created_at', 'updated_at', 'priority', 'status', 'due_at']
     ordering = ['-created_at']
@@ -85,7 +101,7 @@ class TicketViewSet(viewsets.ModelViewSet):
         """返回当前用户可见的工单列表。
 
         管理员可以看到全部工单；普通用户只能看到自己创建或分配给自己的工单。
-        这里先手写少量筛选逻辑，避免第一版过早引入额外依赖。
+        具体查询参数筛选交给 TicketFilterBackend，这里只负责最核心的数据权限范围。
         """
 
         # drf-spectacular 生成接口文档时没有真实登录用户。
@@ -101,22 +117,6 @@ class TicketViewSet(viewsets.ModelViewSet):
         # Q 对象可以组合 OR 条件；这里的 | 就表示“或者”。
         if not user.is_staff:
             queryset = queryset.filter(Q(creator=user) | Q(assignee=user))
-
-        # query_params 对应 URL 问号后面的查询参数，例如 /api/tickets/?status=open。
-        status = self.request.query_params.get('status')
-        priority = self.request.query_params.get('priority')
-        category = self.request.query_params.get('category')
-        assignee = self.request.query_params.get('assignee')
-
-        # 下面这些筛选条件都是可选的：传了才筛，不传就忽略。
-        if status:
-            queryset = queryset.filter(status=status)
-        if priority:
-            queryset = queryset.filter(priority=priority)
-        if category:
-            queryset = queryset.filter(category=category)
-        if assignee:
-            queryset = queryset.filter(assignee_id=assignee)
 
         return queryset
 
