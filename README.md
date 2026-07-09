@@ -30,6 +30,26 @@ cp .env.example .env
 curl http://127.0.0.1:8000/api/health/
 ```
 
+## Docker 启动
+
+第一版 Docker 主要用于模拟部署环境。容器启动时会先执行数据库迁移，再使用 Gunicorn 启动服务。
+
+```bash
+docker compose up --build
+```
+
+容器启动后访问：
+
+```bash
+curl http://127.0.0.1:8000/api/health/
+```
+
+停止容器：
+
+```bash
+docker compose down
+```
+
 ## MVP 范围
 
 - 用户注册和 JWT 登录。

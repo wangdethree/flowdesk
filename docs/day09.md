@@ -26,6 +26,7 @@
 | `DJANGO_SECRET_KEY` | Django 密钥 | `replace-me-with-a-random-secret-key` |
 | `DJANGO_DEBUG` | 是否开启调试模式 | `true` 或 `false` |
 | `DJANGO_ALLOWED_HOSTS` | 允许访问的域名或 IP | `localhost,127.0.0.1` |
+| `SQLITE_DATABASE_PATH` | SQLite 数据库文件路径 | `db.sqlite3` |
 
 ## 本地使用方式
 
