@@ -555,6 +555,123 @@ class TicketAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_participant_can_list_ticket_audit_logs(self):
+        """工单参与者可以查看这张工单的操作历史。"""
+
+        ticket = Ticket.objects.create(
+            title='操作历史工单',
+            description='用于验证参与者能查看审计日志。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        AuditLog.objects.create(
+            actor=self.creator,
+            action=AuditAction.CREATE,
+            target_type='Ticket',
+            target_id=str(ticket.id),
+            description='创建工单',
+            metadata={'title': ticket.title},
+        )
+        AuditLog.objects.create(
+            actor=self.assignee,
+            action=AuditAction.STATUS_CHANGE,
+            target_type='Ticket',
+            target_id=str(ticket.id),
+            description='变更工单状态',
+            metadata={'old_status': TicketStatus.OPEN, 'new_status': TicketStatus.IN_PROGRESS},
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.get(reverse('ticket-audit-logs', args=[ticket.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 2)
+        first_log = response.data['results'][0]
+        self.assertEqual(first_log['actor_username'], self.assignee.username)
+        self.assertEqual(first_log['action'], AuditAction.STATUS_CHANGE)
+        self.assertEqual(first_log['action_display'], '状态流转')
+        self.assertEqual(first_log['metadata']['new_status'], TicketStatus.IN_PROGRESS)
+
+    def test_ticket_audit_logs_only_return_current_ticket_logs(self):
+        """操作历史接口只返回当前工单的日志，不混入其他工单记录。"""
+
+        ticket = Ticket.objects.create(
+            title='当前工单',
+            description='只应该返回这张工单的日志。',
+            creator=self.creator,
+        )
+        other_ticket = Ticket.objects.create(
+            title='其他工单',
+            description='这张工单的日志不能出现在当前工单操作历史里。',
+            creator=self.creator,
+        )
+        AuditLog.objects.create(
+            actor=self.creator,
+            action=AuditAction.CREATE,
+            target_type='Ticket',
+            target_id=str(ticket.id),
+            description='创建当前工单',
+        )
+        AuditLog.objects.create(
+            actor=self.creator,
+            action=AuditAction.CREATE,
+            target_type='Ticket',
+            target_id=str(other_ticket.id),
+            description='创建其他工单',
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.get(reverse('ticket-audit-logs', args=[ticket.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['description'], '创建当前工单')
+
+    def test_ticket_audit_logs_are_paginated(self):
+        """操作历史复用列表分页，避免单张工单历史过多时一次返回太大。"""
+
+        ticket = Ticket.objects.create(
+            title='分页操作历史工单',
+            description='用于验证操作历史默认分页。',
+            creator=self.creator,
+        )
+        for index in range(12):
+            AuditLog.objects.create(
+                actor=self.creator,
+                action=AuditAction.UPDATE,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+                description=f'更新工单 {index}',
+            )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.get(reverse('ticket-audit-logs', args=[ticket.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 12)
+        self.assertEqual(len(response.data['results']), 10)
+
+    def test_unrelated_user_cannot_list_ticket_audit_logs(self):
+        """无关用户不能查看别人工单的操作历史。"""
+
+        ticket = Ticket.objects.create(
+            title='无关用户不可见历史',
+            description='无关用户不应该知道这张工单发生过什么。',
+            creator=self.creator,
+        )
+        AuditLog.objects.create(
+            actor=self.creator,
+            action=AuditAction.CREATE,
+            target_type='Ticket',
+            target_id=str(ticket.id),
+            description='创建工单',
+        )
+        self.client.force_authenticate(user=self.other_user)
+
+        response = self.client.get(reverse('ticket-audit-logs', args=[ticket.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_participant_can_create_and_list_ticket_comments(self):
         ticket = Ticket.objects.create(
             title='评论测试工单',
