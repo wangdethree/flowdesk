@@ -77,6 +77,7 @@ docker compose down
 | GET | `/api/tickets/{id}/` | 查询工单详情 |
 | PUT/PATCH | `/api/tickets/{id}/` | 更新工单 |
 | DELETE | `/api/tickets/{id}/` | 删除工单 |
+| POST | `/api/tickets/{id}/assign/` | 分配或取消分配工单处理人 |
 | GET | `/api/tickets/{id}/comments/` | 查询工单评论和处理记录 |
 | POST | `/api/tickets/{id}/comments/` | 新增工单评论或处理记录 |
 
@@ -95,6 +96,7 @@ docker compose down
 - 管理员可以查看和处理所有工单。
 - 创建人可以修改和删除自己的工单。
 - 处理人可以查看和处理分配给自己的工单，但不能删除工单。
+- 只有管理员或工单创建人可以分配、取消分配处理人。
 - 状态流转受后端限制，已关闭工单不能直接改回待处理。
 - 创建、更新、删除工单以及新增处理记录时，会自动写入审计日志。
 
