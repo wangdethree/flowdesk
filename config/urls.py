@@ -11,6 +11,8 @@ urlpatterns = [
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     # ReDoc 更适合阅读接口文档。
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    # 统计接口统一放在 /api/analytics/ 下，和工单 CRUD 主接口保持边界清晰。
+    path('api/analytics/', include('apps.analytics.urls')),
     path('api/', include('apps.common.urls')),
     # 工单接口挂在 /api/ 下，实际路径由 apps.tickets.urls 里的 router 生成。
     path('api/', include('apps.tickets.urls')),
