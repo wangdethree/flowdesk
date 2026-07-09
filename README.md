@@ -42,3 +42,10 @@ curl http://127.0.0.1:8000/api/health/
 | POST | `/api/users/login/` | JWT 登录 |
 | POST | `/api/users/token/refresh/` | 刷新 access token |
 | GET | `/api/users/me/` | 获取当前登录用户信息 |
+
+## 当前数据模型
+
+| 模型 | 说明 |
+| --- | --- |
+| `Ticket` | 工单主表，保存标题、描述、分类、优先级、状态、创建人、处理人和时间字段 |
+| `TicketComment` | 工单记录表，保存评论和处理记录 |
