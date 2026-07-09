@@ -7,6 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.audit.models import AuditAction, AuditLog
 from apps.tickets.models import Ticket, TicketCategory, TicketComment, TicketPriority, TicketStatus
 
 
@@ -135,6 +136,14 @@ class TicketAPITests(APITestCase):
         ticket = Ticket.objects.get(id=response.data['id'])
         self.assertEqual(ticket.creator, self.creator)
         self.assertEqual(ticket.assignee, self.assignee)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.creator,
+                action=AuditAction.CREATE,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+            ).exists()
+        )
 
     def test_list_only_returns_visible_tickets_for_normal_user(self):
         own_ticket = Ticket.objects.create(
@@ -193,6 +202,14 @@ class TicketAPITests(APITestCase):
         self.assertEqual(update_response.status_code, status.HTTP_200_OK)
         self.assertEqual(update_response.data['status'], TicketStatus.IN_PROGRESS)
         self.assertEqual(delete_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.assignee,
+                action=AuditAction.STATUS_CHANGE,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+            ).exists()
+        )
 
     def test_unrelated_user_cannot_retrieve_ticket(self):
         ticket = Ticket.objects.create(
@@ -226,6 +243,14 @@ class TicketAPITests(APITestCase):
         self.assertEqual(update_response.data['status'], TicketStatus.IN_PROGRESS)
         self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Ticket.objects.filter(id=ticket.id).exists())
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.creator,
+                action=AuditAction.DELETE,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+            ).exists()
+        )
 
     def test_filter_and_search_tickets(self):
         Ticket.objects.create(
@@ -336,6 +361,14 @@ class TicketAPITests(APITestCase):
         self.assertEqual(list_response.status_code, status.HTTP_200_OK)
         self.assertEqual(list_response.data['count'], 1)
         self.assertEqual(list_response.data['results'][0]['content'], '已经开始排查网络配置。')
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.assignee,
+                action=AuditAction.COMMENT,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+            ).exists()
+        )
 
     def test_unrelated_user_cannot_create_ticket_comment(self):
         ticket = Ticket.objects.create(

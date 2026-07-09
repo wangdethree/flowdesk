@@ -4,6 +4,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.audit.models import AuditAction
+from apps.audit.services import create_audit_log
 from apps.tickets.models import Ticket
 from apps.tickets.permissions import IsTicketParticipantOrStaff
 from apps.tickets.serializers import TicketCommentSerializer, TicketSerializer
@@ -75,7 +77,51 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         # serializer.save() 会调用 Serializer 的 create/update 逻辑，并最终写入数据库。
         # 这里强制使用 request.user，前端即使传 creator 字段也不会生效。
-        serializer.save(creator=self.request.user)
+        ticket = serializer.save(creator=self.request.user)
+        create_audit_log(
+            actor=self.request.user,
+            action=AuditAction.CREATE,
+            target=ticket,
+            description='创建工单',
+            metadata={'title': ticket.title, 'status': ticket.status},
+        )
+
+    def perform_update(self, serializer):
+        """更新工单后写审计日志。
+
+        这里先记录状态和标题等关键字段。更细粒度的字段 diff 可以放到后续版本增强。
+        """
+
+        old_status = serializer.instance.status
+        ticket = serializer.save()
+        action = AuditAction.STATUS_CHANGE if ticket.status != old_status else AuditAction.UPDATE
+        description = '变更工单状态' if action == AuditAction.STATUS_CHANGE else '更新工单'
+        create_audit_log(
+            actor=self.request.user,
+            action=action,
+            target=ticket,
+            description=description,
+            metadata={
+                'title': ticket.title,
+                'old_status': old_status,
+                'new_status': ticket.status,
+            },
+        )
+
+    def perform_destroy(self, instance):
+        """删除工单前写审计日志。
+
+        删除后对象不再存在，所以要在真正 delete 之前先记录标题和状态。
+        """
+
+        create_audit_log(
+            actor=self.request.user,
+            action=AuditAction.DELETE,
+            target=instance,
+            description='删除工单',
+            metadata={'title': instance.title, 'status': instance.status},
+        )
+        instance.delete()
 
     @action(detail=True, methods=['get', 'post'])
     def comments(self, request, pk=None):
@@ -101,5 +147,15 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(ticket=ticket, author=request.user)
+        comment = serializer.save(ticket=ticket, author=request.user)
+        create_audit_log(
+            actor=request.user,
+            action=AuditAction.COMMENT,
+            target=ticket,
+            description='新增工单记录',
+            metadata={
+                'comment_id': comment.id,
+                'comment_type': comment.comment_type,
+            },
+        )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
