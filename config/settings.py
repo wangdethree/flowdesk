@@ -23,6 +23,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'drf_spectacular',
     'apps.audit',
     'apps.common',
     'apps.users',
@@ -100,6 +101,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # DRF 默认要求登录访问，单个公开接口再显式设置 AllowAny。
 REST_FRAMEWORK = {
+    # drf-spectacular 负责根据 DRF 的 Serializer/ViewSet 自动生成 OpenAPI 接口描述。
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
@@ -109,4 +112,12 @@ REST_FRAMEWORK = {
     # 列表接口默认分页，避免数据量变大后一次返回太多记录。
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'FlowDesk API',
+    'DESCRIPTION': '企业工单流转系统后端接口文档',
+    'VERSION': '1.0.0',
+    # schema 默认对外开放，方便开发阶段查看接口；生产环境可以放到内网或加权限。
+    'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'],
 }

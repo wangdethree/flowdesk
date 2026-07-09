@@ -1,4 +1,5 @@
 from django.db.models import Q
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema, extend_schema_view
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -11,6 +12,48 @@ from apps.tickets.permissions import IsTicketParticipantOrStaff
 from apps.tickets.serializers import TicketCommentSerializer, TicketSerializer
 
 
+@extend_schema_view(
+    retrieve=extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ]
+    ),
+    update=extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ]
+    ),
+    partial_update=extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ]
+    ),
+    destroy=extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ]
+    ),
+)
 class TicketViewSet(viewsets.ModelViewSet):
     """工单 CRUD 接口。
 
@@ -44,6 +87,11 @@ class TicketViewSet(viewsets.ModelViewSet):
         管理员可以看到全部工单；普通用户只能看到自己创建或分配给自己的工单。
         这里先手写少量筛选逻辑，避免第一版过早引入额外依赖。
         """
+
+        # drf-spectacular 生成接口文档时没有真实登录用户。
+        # 返回空查询集可以让它安全读取模型信息，同时不影响真实请求的数据权限。
+        if getattr(self, 'swagger_fake_view', False):
+            return Ticket.objects.none()
 
         # select_related 会把 creator 和 assignee 一起查出来，减少后续访问用户名时的额外查询。
         queryset = Ticket.objects.select_related('creator', 'assignee')
