@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'apps.common',
     'apps.users',
     'apps.tickets',
+    'apps.notifications',
 ]
 
 MIDDLEWARE = [
