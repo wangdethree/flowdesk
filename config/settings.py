@@ -2,17 +2,24 @@
 
 from pathlib import Path
 
+from config.env import get_bool_env, get_env, get_list_env
+
 # BASE_DIR 指向项目根目录，后续文件路径都基于它拼接。
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# 开发阶段先直接写在这里，部署前再迁移到环境变量。
-SECRET_KEY = 'django-insecure-l!-7(@(i0hi0we*md-du@zf+bc@@i3=8cc)^5rlmp+9jg3bbik'
+# 本地开发提供默认值，部署时通过环境变量覆盖。
+# 真实生产环境必须设置 DJANGO_SECRET_KEY，不能使用仓库里的开发默认值。
+SECRET_KEY = get_env(
+    'DJANGO_SECRET_KEY',
+    default='django-insecure-l!-7(@(i0hi0we*md-du@zf+bc@@i3=8cc)^5rlmp+9jg3bbik',
+)
 
-# DEBUG=True 只用于本地开发，生产环境必须关闭。
-DEBUG = True
+# DEBUG=True 只用于本地开发；线上通过 DJANGO_DEBUG=false 关闭。
+DEBUG = get_bool_env('DJANGO_DEBUG', default=True)
 
-ALLOWED_HOSTS = []
+# 多个 host 用英文逗号分隔，例如：localhost,127.0.0.1,example.com。
+ALLOWED_HOSTS = get_list_env('DJANGO_ALLOWED_HOSTS', default=[])
 
 
 INSTALLED_APPS = [
