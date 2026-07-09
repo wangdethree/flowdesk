@@ -42,6 +42,11 @@ curl http://127.0.0.1:8000/api/health/
 | POST | `/api/users/login/` | JWT 登录 |
 | POST | `/api/users/token/refresh/` | 刷新 access token |
 | GET | `/api/users/me/` | 获取当前登录用户信息 |
+| GET | `/api/tickets/` | 查询工单列表 |
+| POST | `/api/tickets/` | 创建工单 |
+| GET | `/api/tickets/{id}/` | 查询工单详情 |
+| PUT/PATCH | `/api/tickets/{id}/` | 更新工单 |
+| DELETE | `/api/tickets/{id}/` | 删除工单 |
 
 ## 当前数据模型
 

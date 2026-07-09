@@ -2,7 +2,10 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
+from rest_framework import status
+from rest_framework.test import APITestCase
 
 from apps.tickets.models import Ticket, TicketCategory, TicketComment, TicketPriority, TicketStatus
 
@@ -86,3 +89,157 @@ class TicketModelTests(TestCase):
         self.assertEqual(comment.author, self.assignee)
         self.assertEqual(ticket.comments.count(), 1)
         self.assertEqual(str(comment), f'处理记录 - {ticket.id}')
+
+
+class TicketAPITests(APITestCase):
+    def setUp(self):
+        self.creator = User.objects.create_user(username='creator_api', password='TestPass123')
+        self.assignee = User.objects.create_user(username='assignee_api', password='TestPass123')
+        self.other_user = User.objects.create_user(username='other_api', password='TestPass123')
+        self.staff_user = User.objects.create_user(
+            username='staff_api',
+            password='TestPass123',
+            is_staff=True,
+        )
+
+    def test_list_requires_authentication(self):
+        response = self.client.get(reverse('ticket-list'))
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_create_ticket_sets_current_user_as_creator(self):
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-list'),
+            {
+                'title': '电脑无法连接公司网络',
+                'description': '连接公司 Wi-Fi 后无法访问内部系统。',
+                'category': TicketCategory.BUG,
+                'priority': TicketPriority.HIGH,
+                'assignee': self.assignee.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        ticket = Ticket.objects.get(id=response.data['id'])
+        self.assertEqual(ticket.creator, self.creator)
+        self.assertEqual(ticket.assignee, self.assignee)
+
+    def test_list_only_returns_visible_tickets_for_normal_user(self):
+        own_ticket = Ticket.objects.create(
+            title='我创建的工单',
+            description='普通用户应该能看到自己创建的工单。',
+            creator=self.creator,
+        )
+        assigned_ticket = Ticket.objects.create(
+            title='分配给我的工单',
+            description='普通用户应该能看到分配给自己的工单。',
+            creator=self.other_user,
+            assignee=self.creator,
+        )
+        Ticket.objects.create(
+            title='别人的工单',
+            description='普通用户不应该看到无关工单。',
+            creator=self.other_user,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.get(reverse('ticket-list'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {item['id'] for item in response.data}
+        self.assertEqual(returned_ids, {own_ticket.id, assigned_ticket.id})
+
+    def test_staff_can_list_all_tickets(self):
+        Ticket.objects.create(title='工单一', description='管理员可见。', creator=self.creator)
+        Ticket.objects.create(title='工单二', description='管理员可见。', creator=self.other_user)
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.get(reverse('ticket-list'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+
+    def test_assignee_can_retrieve_but_cannot_update_ticket(self):
+        ticket = Ticket.objects.create(
+            title='分配给处理人的工单',
+            description='处理人可以查看，但第一版不能修改。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        detail_url = reverse('ticket-detail', args=[ticket.id])
+        retrieve_response = self.client.get(detail_url)
+        update_response = self.client.patch(
+            detail_url,
+            {'title': '处理人尝试修改标题'},
+            format='json',
+        )
+
+        self.assertEqual(retrieve_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unrelated_user_cannot_retrieve_ticket(self):
+        ticket = Ticket.objects.create(
+            title='无关用户不可见工单',
+            description='既不是创建人也不是处理人时不能查看。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.other_user)
+
+        response = self.client.get(reverse('ticket-detail', args=[ticket.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_creator_can_update_and_delete_ticket(self):
+        ticket = Ticket.objects.create(
+            title='创建人可管理工单',
+            description='创建人可以修改和删除自己的工单。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        detail_url = reverse('ticket-detail', args=[ticket.id])
+        update_response = self.client.patch(
+            detail_url,
+            {'status': TicketStatus.IN_PROGRESS},
+            format='json',
+        )
+        delete_response = self.client.delete(detail_url)
+
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data['status'], TicketStatus.IN_PROGRESS)
+        self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Ticket.objects.filter(id=ticket.id).exists())
+
+    def test_filter_and_search_tickets(self):
+        Ticket.objects.create(
+            title='网络故障工单',
+            description='公司网络不稳定。',
+            category=TicketCategory.BUG,
+            priority=TicketPriority.HIGH,
+            creator=self.creator,
+        )
+        Ticket.objects.create(
+            title='功能咨询工单',
+            description='咨询报表导出功能。',
+            category=TicketCategory.CONSULT,
+            priority=TicketPriority.LOW,
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.get(
+            reverse('ticket-list'),
+            {
+                'category': TicketCategory.BUG,
+                'search': '网络',
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], '网络故障工单')
