@@ -5,6 +5,17 @@ from rest_framework.filters import BaseFilterBackend
 from apps.tickets.models import TicketCategory, TicketPriority, TicketStatus
 
 
+class QueryBooleanField(serializers.BooleanField):
+    """专门用于查询参数的布尔字段。
+
+    DRF 的 BooleanField 主要兼容 HTML 表单场景：复选框没提交时会被理解成 False。
+    但 URL 查询参数不一样，没传 overdue 或 has_assignee 应该表示“不筛选”，而不是 False。
+    所以这里把 default_empty_html 改成 empty，让缺失参数保持“未提供”的语义。
+    """
+
+    default_empty_html = serializers.empty
+
+
 class TicketQueryParamSerializer(serializers.Serializer):
     """工单列表查询参数校验器。
 
@@ -18,8 +29,8 @@ class TicketQueryParamSerializer(serializers.Serializer):
     category = serializers.ChoiceField(choices=TicketCategory.choices, required=False)
     assignee = serializers.IntegerField(required=False, min_value=1)
     creator = serializers.IntegerField(required=False, min_value=1)
-    overdue = serializers.BooleanField(required=False)
-    has_assignee = serializers.BooleanField(required=False)
+    overdue = QueryBooleanField(required=False)
+    has_assignee = QueryBooleanField(required=False)
     mine = serializers.ChoiceField(choices=('created', 'assigned'), required=False)
 
 

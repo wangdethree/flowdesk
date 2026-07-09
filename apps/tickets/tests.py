@@ -281,6 +281,112 @@ class TicketAPITests(APITestCase):
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(self.get_results(response)[0]['title'], '网络故障工单')
 
+    def test_filter_tickets_by_mine_created(self):
+        """mine=created 只返回当前用户自己创建的工单。"""
+
+        created_by_me = Ticket.objects.create(
+            title='我创建的工单',
+            description='用于验证 mine=created。',
+            creator=self.creator,
+        )
+        Ticket.objects.create(
+            title='分配给我的工单',
+            description='这个工单不是我创建的，所以不应该出现在 mine=created 结果里。',
+            creator=self.other_user,
+            assignee=self.creator,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.get(reverse('ticket-list'), {'mine': 'created'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {item['id'] for item in self.get_results(response)}
+        self.assertEqual(returned_ids, {created_by_me.id})
+
+    def test_filter_tickets_by_mine_assigned(self):
+        """mine=assigned 只返回分配给当前用户处理的工单。"""
+
+        assigned_to_me = Ticket.objects.create(
+            title='分配给我的工单',
+            description='用于验证 mine=assigned。',
+            creator=self.other_user,
+            assignee=self.creator,
+        )
+        Ticket.objects.create(
+            title='我创建但未分配给我的工单',
+            description='这个工单不应该出现在 mine=assigned 结果里。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.get(reverse('ticket-list'), {'mine': 'assigned'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {item['id'] for item in self.get_results(response)}
+        self.assertEqual(returned_ids, {assigned_to_me.id})
+
+    def test_filter_tickets_by_overdue(self):
+        """overdue=true 只返回超过截止时间且仍未完成的工单。"""
+
+        overdue_ticket = Ticket.objects.create(
+            title='已经超时的工单',
+            description='截止时间已经过去，并且状态仍是待处理。',
+            creator=self.creator,
+            due_at=timezone.now() - timedelta(hours=2),
+        )
+        Ticket.objects.create(
+            title='已经解决的历史工单',
+            description='即使截止时间在过去，已解决工单也不算当前超时。',
+            creator=self.creator,
+            status=TicketStatus.RESOLVED,
+            due_at=timezone.now() - timedelta(hours=2),
+            resolved_at=timezone.now(),
+        )
+        Ticket.objects.create(
+            title='还没到期的工单',
+            description='截止时间在未来，不应该被 overdue=true 查出来。',
+            creator=self.creator,
+            due_at=timezone.now() + timedelta(hours=2),
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.get(reverse('ticket-list'), {'overdue': 'true'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {item['id'] for item in self.get_results(response)}
+        self.assertEqual(returned_ids, {overdue_ticket.id})
+
+    def test_filter_tickets_by_has_assignee(self):
+        """has_assignee=false 可以查询还没有处理人的工单。"""
+
+        unassigned_ticket = Ticket.objects.create(
+            title='未分配工单',
+            description='还没有处理人。',
+            creator=self.creator,
+        )
+        Ticket.objects.create(
+            title='已分配工单',
+            description='已经有处理人。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.get(reverse('ticket-list'), {'has_assignee': 'false'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {item['id'] for item in self.get_results(response)}
+        self.assertEqual(returned_ids, {unassigned_ticket.id})
+
+    def test_invalid_ticket_filter_returns_bad_request(self):
+        """筛选参数非法时返回 400，避免静默忽略错误查询条件。"""
+
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.get(reverse('ticket-list'), {'priority': 'not-exists'})
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_ticket_list_is_paginated(self):
         for index in range(12):
             Ticket.objects.create(
