@@ -8,6 +8,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.audit.models import AuditAction, AuditLog
+from apps.notifications.models import Notification, NotificationType
 from apps.tickets.models import Ticket, TicketCategory, TicketComment, TicketPriority, TicketStatus
 
 
@@ -423,6 +424,32 @@ class TicketAPITests(APITestCase):
         self.assertEqual(ticket.status, TicketStatus.RESOLVED)
         self.assertIsNotNone(ticket.resolved_at)
 
+    def test_status_change_creates_notification_for_other_participant(self):
+        """处理人变更状态后，创建人会收到状态变化通知。"""
+
+        ticket = Ticket.objects.create(
+            title='状态通知工单',
+            description='验证状态变化会通知其他参与者。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.IN_PROGRESS,
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.patch(
+            reverse('ticket-detail', args=[ticket.id]),
+            {'status': TicketStatus.RESOLVED},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        notification = Notification.objects.get(
+            recipient=self.creator,
+            notification_type=NotificationType.TICKET_STATUS_CHANGED,
+        )
+        self.assertEqual(notification.metadata['old_status'], TicketStatus.IN_PROGRESS)
+        self.assertEqual(notification.metadata['new_status'], TicketStatus.RESOLVED)
+
     def test_invalid_status_transition_returns_bad_request(self):
         ticket = Ticket.objects.create(
             title='已关闭工单',
@@ -473,6 +500,31 @@ class TicketAPITests(APITestCase):
                 },
             ).exists()
         )
+
+    def test_assign_ticket_creates_notification_for_assignee(self):
+        """工单分配后，新的处理人会收到站内通知。"""
+
+        ticket = Ticket.objects.create(
+            title='分配通知工单',
+            description='验证分配工单会生成通知。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-assign', args=[ticket.id]),
+            {'assignee': self.assignee.id},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        notification = Notification.objects.get(
+            recipient=self.assignee,
+            notification_type=NotificationType.TICKET_ASSIGNED,
+        )
+        self.assertEqual(notification.target_type, 'Ticket')
+        self.assertEqual(notification.target_id, str(ticket.id))
+        self.assertEqual(notification.metadata['actor_id'], self.creator.id)
 
     def test_staff_can_assign_any_visible_ticket(self):
         """管理员可以分配任意工单，不受普通用户可见范围限制。"""
@@ -706,6 +758,34 @@ class TicketAPITests(APITestCase):
                 target_id=str(ticket.id),
             ).exists()
         )
+
+    def test_comment_creates_notification_for_other_participant(self):
+        """处理人新增评论后，创建人会收到评论通知。"""
+
+        ticket = Ticket.objects.create(
+            title='评论通知工单',
+            description='验证评论会通知其他参与者。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.post(
+            reverse('ticket-comments', args=[ticket.id]),
+            {
+                'content': '我已经看到了这个问题，马上处理。',
+                'comment_type': TicketComment.CommentType.COMMENT,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        notification = Notification.objects.get(
+            recipient=self.creator,
+            notification_type=NotificationType.TICKET_COMMENTED,
+        )
+        self.assertEqual(notification.target_id, str(ticket.id))
+        self.assertEqual(notification.metadata['comment_id'], response.data['id'])
 
     def test_unrelated_user_cannot_create_ticket_comment(self):
         ticket = Ticket.objects.create(
