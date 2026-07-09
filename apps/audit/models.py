@@ -13,6 +13,7 @@ class AuditAction(models.TextChoices):
     DELETE = 'delete', '删除'
     COMMENT = 'comment', '评论'
     STATUS_CHANGE = 'status_change', '状态流转'
+    ASSIGN = 'assign', '分配处理人'
 
 
 class AuditLog(models.Model):

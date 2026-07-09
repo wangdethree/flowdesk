@@ -10,7 +10,12 @@ from apps.audit.services import create_audit_log
 from apps.tickets.filters import TicketFilterBackend
 from apps.tickets.models import Ticket
 from apps.tickets.permissions import IsTicketParticipantOrStaff
-from apps.tickets.serializers import TicketCommentSerializer, TicketSerializer
+from apps.tickets.serializers import (
+    TicketAssignmentSerializer,
+    TicketCommentSerializer,
+    TicketSerializer,
+)
+from apps.tickets.services import assign_ticket
 
 
 @extend_schema_view(
@@ -68,6 +73,18 @@ from apps.tickets.serializers import TicketCommentSerializer, TicketSerializer
             )
         ]
     ),
+    assign=extend_schema(
+        request=TicketAssignmentSerializer,
+        responses=TicketSerializer,
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
 )
 class TicketViewSet(viewsets.ModelViewSet):
     """工单 CRUD 接口。
@@ -95,6 +112,8 @@ class TicketViewSet(viewsets.ModelViewSet):
         # comments 是下面自定义的评论接口，输入输出结构和工单主表不同。
         if self.action == 'comments':
             return TicketCommentSerializer
+        if self.action == 'assign':
+            return TicketAssignmentSerializer
         return TicketSerializer
 
     def get_queryset(self):
@@ -170,6 +189,42 @@ class TicketViewSet(viewsets.ModelViewSet):
             metadata={'title': instance.title, 'status': instance.status},
         )
         instance.delete()
+
+    @action(detail=True, methods=['post'])
+    def assign(self, request, pk=None):
+        """分配或取消分配工单处理人。
+
+        这个接口表示一个明确业务动作：POST /api/tickets/{id}/assign/。
+        只有管理员和工单创建人可以分配处理人；当前处理人可以处理工单，但不能把工单转给别人。
+        """
+
+        # get_object 会先做数据范围和对象权限校验，无关用户拿到的是 404。
+        ticket = self.get_object()
+
+        if not request.user.is_staff and ticket.creator_id != request.user.id:
+            return Response(
+                {'detail': '只有管理员或工单创建人可以分配处理人。'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        assignee = serializer.validated_data['assignee']
+
+        old_assignee_id = assign_ticket(ticket=ticket, assignee=assignee)
+        create_audit_log(
+            actor=request.user,
+            action=AuditAction.ASSIGN,
+            target=ticket,
+            description='分配工单处理人',
+            metadata={
+                'old_assignee_id': old_assignee_id,
+                'new_assignee_id': ticket.assignee_id,
+            },
+        )
+
+        # 分配完成后返回完整工单，前端可以直接刷新当前详情页。
+        return Response(TicketSerializer(ticket).data)
 
     @action(detail=True, methods=['get', 'post'])
     def comments(self, request, pk=None):

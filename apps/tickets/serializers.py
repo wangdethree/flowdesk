@@ -152,3 +152,17 @@ class TicketCommentSerializer(serializers.ModelSerializer):
             'author_username',
             'created_at',
         )
+
+
+class TicketAssignmentSerializer(serializers.Serializer):
+    """工单分配接口序列化器。
+
+    分配处理人是一个明确的业务动作，所以单独使用这个 Serializer 校验入参。
+    这里允许 assignee 传 null，表示把工单从某个处理人手里取消分配。
+    """
+
+    assignee = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        allow_null=True,
+        required=True,
+    )
