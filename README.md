@@ -18,6 +18,12 @@ python3 -m venv .venv
 .venv/bin/python manage.py runserver
 ```
 
+环境变量示例：
+
+```bash
+cp .env.example .env
+```
+
 健康检查：
 
 ```bash
