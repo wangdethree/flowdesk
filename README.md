@@ -32,3 +32,13 @@ curl http://127.0.0.1:8000/api/health/
 - 评论和处理记录。
 - 基础角色权限控制。
 - 分页、筛选和搜索。
+
+## 当前接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/health/` | 健康检查 |
+| POST | `/api/users/register/` | 用户注册 |
+| POST | `/api/users/login/` | JWT 登录 |
+| POST | `/api/users/token/refresh/` | 刷新 access token |
+| GET | `/api/users/me/` | 获取当前登录用户信息 |

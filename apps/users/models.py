@@ -1,3 +1,1 @@
-from django.db import models
-
-# Create your models here.
+"""用户模块暂时复用 Django 内置 User 模型。"""
