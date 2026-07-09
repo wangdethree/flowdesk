@@ -16,7 +16,12 @@ from apps.tickets.serializers import (
     TicketCommentSerializer,
     TicketSerializer,
 )
-from apps.tickets.services import assign_ticket
+from apps.tickets.services import (
+    assign_ticket,
+    notify_ticket_assigned,
+    notify_ticket_commented,
+    notify_ticket_status_changed,
+)
 
 
 @extend_schema_view(
@@ -188,6 +193,13 @@ class TicketViewSet(viewsets.ModelViewSet):
                 'new_status': ticket.status,
             },
         )
+        if action == AuditAction.STATUS_CHANGE:
+            notify_ticket_status_changed(
+                ticket=ticket,
+                actor=self.request.user,
+                old_status=old_status,
+                new_status=ticket.status,
+            )
 
     def perform_destroy(self, instance):
         """删除工单前写审计日志。
@@ -236,6 +248,7 @@ class TicketViewSet(viewsets.ModelViewSet):
                 'new_assignee_id': ticket.assignee_id,
             },
         )
+        notify_ticket_assigned(ticket=ticket, actor=request.user)
 
         # 分配完成后返回完整工单，前端可以直接刷新当前详情页。
         return Response(TicketSerializer(ticket).data)
@@ -296,4 +309,5 @@ class TicketViewSet(viewsets.ModelViewSet):
                 'comment_type': comment.comment_type,
             },
         )
+        notify_ticket_commented(ticket=ticket, comment=comment, actor=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
