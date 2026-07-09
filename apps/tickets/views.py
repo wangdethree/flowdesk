@@ -5,7 +5,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.audit.models import AuditAction
+from apps.audit.models import AuditAction, AuditLog
+from apps.audit.serializers import AuditLogSerializer
 from apps.audit.services import create_audit_log
 from apps.tickets.filters import TicketFilterBackend
 from apps.tickets.models import Ticket
@@ -85,6 +86,17 @@ from apps.tickets.services import assign_ticket
             )
         ],
     ),
+    audit_logs=extend_schema(
+        responses=AuditLogSerializer(many=True),
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
 )
 class TicketViewSet(viewsets.ModelViewSet):
     """工单 CRUD 接口。
@@ -112,6 +124,8 @@ class TicketViewSet(viewsets.ModelViewSet):
         # comments 是下面自定义的评论接口，输入输出结构和工单主表不同。
         if self.action == 'comments':
             return TicketCommentSerializer
+        if self.action == 'audit_logs':
+            return AuditLogSerializer
         if self.action == 'assign':
             return TicketAssignmentSerializer
         return TicketSerializer
@@ -225,6 +239,27 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         # 分配完成后返回完整工单，前端可以直接刷新当前详情页。
         return Response(TicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['get'], url_path='audit-logs')
+    def audit_logs(self, request, pk=None):
+        """查询某张工单的操作历史。
+
+        审计日志本身是独立表，但这里挂在工单详情下面，是为了复用工单对象权限：
+        只要用户不能查看这张工单，就不能查看这张工单的操作历史。
+        """
+
+        # get_object 会先限制当前用户能看到的工单范围，再做对象权限判断。
+        # 因此无关用户访问别人工单的操作历史时，会和访问详情一样返回 404。
+        ticket = self.get_object()
+        logs = AuditLog.for_target(ticket).select_related('actor')
+
+        page = self.paginate_queryset(logs)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(logs, many=True)
+        return Response(serializer.data)
 
     @action(detail=True, methods=['get', 'post'])
     def comments(self, request, pk=None):

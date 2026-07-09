@@ -43,6 +43,19 @@ class AuditLog(models.Model):
     metadata = models.JSONField('扩展数据', default=dict, blank=True)
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
 
+    @classmethod
+    def for_target(cls, target):
+        """查询某个业务对象对应的审计日志。
+
+        审计日志通过 target_type 和 target_id 保存“被操作对象”，没有直接外键。
+        这样同一张表后续可以记录工单、评论、用户等不同资源的操作历史。
+        """
+
+        return cls.objects.filter(
+            target_type=target.__class__.__name__,
+            target_id=str(target.pk),
+        )
+
     class Meta:
         verbose_name = '审计日志'
         verbose_name_plural = '审计日志'
