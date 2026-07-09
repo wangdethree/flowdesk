@@ -1,10 +1,12 @@
 from django.db.models import Q
-from rest_framework import filters, viewsets
+from rest_framework import filters, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from apps.tickets.models import Ticket
 from apps.tickets.permissions import IsTicketParticipantOrStaff
-from apps.tickets.serializers import TicketSerializer
+from apps.tickets.serializers import TicketCommentSerializer, TicketSerializer
 
 
 class TicketViewSet(viewsets.ModelViewSet):
@@ -25,6 +27,14 @@ class TicketViewSet(viewsets.ModelViewSet):
     search_fields = ['title', 'description']
     ordering_fields = ['created_at', 'updated_at', 'priority', 'status', 'due_at']
     ordering = ['-created_at']
+
+    def get_serializer_class(self):
+        """根据当前动作选择不同的 Serializer。"""
+
+        # comments 是下面自定义的评论接口，输入输出结构和工单主表不同。
+        if self.action == 'comments':
+            return TicketCommentSerializer
+        return TicketSerializer
 
     def get_queryset(self):
         """返回当前用户可见的工单列表。
@@ -66,3 +76,30 @@ class TicketViewSet(viewsets.ModelViewSet):
         # serializer.save() 会调用 Serializer 的 create/update 逻辑，并最终写入数据库。
         # 这里强制使用 request.user，前端即使传 creator 字段也不会生效。
         serializer.save(creator=self.request.user)
+
+    @action(detail=True, methods=['get', 'post'])
+    def comments(self, request, pk=None):
+        """查询或新增某张工单下的评论/处理记录。
+
+        这个接口挂在工单详情下面：/api/tickets/{id}/comments/。
+        这样设计是因为评论本身依附于某张工单，不适合作为孤立资源随便创建。
+        """
+
+        # get_object 会先走 get_queryset 的数据范围限制，再走对象权限校验。
+        # 所以无关用户既看不到工单，也不能给工单写评论。
+        ticket = self.get_object()
+
+        if request.method == 'GET':
+            comments = ticket.comments.select_related('author')
+            page = self.paginate_queryset(comments)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+
+            serializer = self.get_serializer(comments, many=True)
+            return Response(serializer.data)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(ticket=ticket, author=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

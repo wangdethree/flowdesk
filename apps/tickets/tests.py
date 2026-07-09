@@ -102,6 +102,15 @@ class TicketAPITests(APITestCase):
             is_staff=True,
         )
 
+    def get_results(self, response):
+        """读取分页列表里的真实数据。
+
+        开启 DRF 分页后，列表接口返回结构会变成：
+        {"count": 2, "next": null, "previous": null, "results": [...]}
+        """
+
+        return response.data['results']
+
     def test_list_requires_authentication(self):
         response = self.client.get(reverse('ticket-list'))
 
@@ -149,7 +158,7 @@ class TicketAPITests(APITestCase):
         response = self.client.get(reverse('ticket-list'))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        returned_ids = {item['id'] for item in response.data}
+        returned_ids = {item['id'] for item in self.get_results(response)}
         self.assertEqual(returned_ids, {own_ticket.id, assigned_ticket.id})
 
     def test_staff_can_list_all_tickets(self):
@@ -160,12 +169,12 @@ class TicketAPITests(APITestCase):
         response = self.client.get(reverse('ticket-list'))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
+        self.assertEqual(response.data['count'], 2)
 
-    def test_assignee_can_retrieve_but_cannot_update_ticket(self):
+    def test_assignee_can_retrieve_and_update_but_cannot_delete_ticket(self):
         ticket = Ticket.objects.create(
             title='分配给处理人的工单',
-            description='处理人可以查看，但第一版不能修改。',
+            description='处理人可以查看和处理，但不能删除。',
             creator=self.creator,
             assignee=self.assignee,
         )
@@ -175,12 +184,15 @@ class TicketAPITests(APITestCase):
         retrieve_response = self.client.get(detail_url)
         update_response = self.client.patch(
             detail_url,
-            {'title': '处理人尝试修改标题'},
+            {'status': TicketStatus.IN_PROGRESS},
             format='json',
         )
+        delete_response = self.client.delete(detail_url)
 
         self.assertEqual(retrieve_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(update_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data['status'], TicketStatus.IN_PROGRESS)
+        self.assertEqual(delete_response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_unrelated_user_cannot_retrieve_ticket(self):
         ticket = Ticket.objects.create(
@@ -241,5 +253,102 @@ class TicketAPITests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['title'], '网络故障工单')
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(self.get_results(response)[0]['title'], '网络故障工单')
+
+    def test_ticket_list_is_paginated(self):
+        for index in range(12):
+            Ticket.objects.create(
+                title=f'分页测试工单 {index}',
+                description='验证列表接口默认分页。',
+                creator=self.creator,
+            )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.get(reverse('ticket-list'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 12)
+        self.assertEqual(len(response.data['results']), 10)
+
+    def test_valid_status_transition_sets_timestamp(self):
+        ticket = Ticket.objects.create(
+            title='状态流转工单',
+            description='验证处理中到已解决会记录解决时间。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.IN_PROGRESS,
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.patch(
+            reverse('ticket-detail', args=[ticket.id]),
+            {'status': TicketStatus.RESOLVED},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(ticket.status, TicketStatus.RESOLVED)
+        self.assertIsNotNone(ticket.resolved_at)
+
+    def test_invalid_status_transition_returns_bad_request(self):
+        ticket = Ticket.objects.create(
+            title='已关闭工单',
+            description='关闭后的工单不能重新打开。',
+            creator=self.creator,
+            status=TicketStatus.CLOSED,
+            closed_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.patch(
+            reverse('ticket-detail', args=[ticket.id]),
+            {'status': TicketStatus.OPEN},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_participant_can_create_and_list_ticket_comments(self):
+        ticket = Ticket.objects.create(
+            title='评论测试工单',
+            description='验证工单评论和处理记录。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        comments_url = reverse('ticket-comments', args=[ticket.id])
+        create_response = self.client.post(
+            comments_url,
+            {
+                'content': '已经开始排查网络配置。',
+                'comment_type': TicketComment.CommentType.HANDLING,
+            },
+            format='json',
+        )
+        list_response = self.client.get(comments_url)
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_response.data['author'], self.assignee.id)
+        self.assertEqual(create_response.data['ticket'], ticket.id)
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(list_response.data['count'], 1)
+        self.assertEqual(list_response.data['results'][0]['content'], '已经开始排查网络配置。')
+
+    def test_unrelated_user_cannot_create_ticket_comment(self):
+        ticket = Ticket.objects.create(
+            title='无关用户不可评论工单',
+            description='只有参与者才能写评论。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.other_user)
+
+        response = self.client.post(
+            reverse('ticket-comments', args=[ticket.id]),
+            {'content': '尝试写入无关评论。'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

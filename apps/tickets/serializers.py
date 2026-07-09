@@ -1,10 +1,21 @@
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import serializers
 
-from apps.tickets.models import Ticket
+from apps.tickets.models import Ticket, TicketComment, TicketStatus
 
 
 User = get_user_model()
+
+
+# 工单状态流转白名单。
+# 这样做的好处是后端明确控制业务流程，避免前端随便把已关闭工单改回待处理。
+ALLOWED_STATUS_TRANSITIONS = {
+    TicketStatus.OPEN: {TicketStatus.IN_PROGRESS, TicketStatus.CLOSED},
+    TicketStatus.IN_PROGRESS: {TicketStatus.RESOLVED, TicketStatus.CLOSED},
+    TicketStatus.RESOLVED: {TicketStatus.CLOSED},
+    TicketStatus.CLOSED: set(),
+}
 
 
 class TicketSerializer(serializers.ModelSerializer):
@@ -66,4 +77,78 @@ class TicketSerializer(serializers.ModelSerializer):
             'updated_at',
             'is_finished',
             'is_overdue',
+        )
+
+    def validate_status(self, value):
+        """校验状态流转是否合法。"""
+
+        # 创建工单时还没有旧状态，只需要检查字段枚举本身是否合法。
+        if self.instance is None:
+            return value
+
+        old_status = self.instance.status
+        if value == old_status:
+            return value
+
+        allowed_next_statuses = ALLOWED_STATUS_TRANSITIONS[old_status]
+        if value not in allowed_next_statuses:
+            raise serializers.ValidationError(
+                f'工单状态不能从 {old_status} 直接流转到 {value}。'
+            )
+
+        return value
+
+    def update(self, instance, validated_data):
+        """更新工单，并在进入终态时自动记录时间。
+
+        resolved_at 和 closed_at 不让前端直接传，是为了保证这些关键时间由后端统一维护。
+        """
+
+        old_status = instance.status
+        ticket = super().update(instance, validated_data)
+
+        if ticket.status != old_status:
+            now = timezone.now()
+            update_fields = []
+
+            if ticket.status == TicketStatus.RESOLVED and ticket.resolved_at is None:
+                ticket.resolved_at = now
+                update_fields.append('resolved_at')
+
+            if ticket.status == TicketStatus.CLOSED and ticket.closed_at is None:
+                ticket.closed_at = now
+                update_fields.append('closed_at')
+
+            if update_fields:
+                ticket.save(update_fields=update_fields)
+
+        return ticket
+
+
+class TicketCommentSerializer(serializers.ModelSerializer):
+    """工单评论/处理记录序列化器。
+
+    评论记录只允许前端提交 content 和 comment_type。
+    ticket、author、created_at 都由后端根据当前请求自动确定，避免被伪造。
+    """
+
+    author_username = serializers.CharField(source='author.username', read_only=True)
+
+    class Meta:
+        model = TicketComment
+        fields = (
+            'id',
+            'ticket',
+            'author',
+            'author_username',
+            'content',
+            'comment_type',
+            'created_at',
+        )
+        read_only_fields = (
+            'id',
+            'ticket',
+            'author',
+            'author_username',
+            'created_at',
         )
