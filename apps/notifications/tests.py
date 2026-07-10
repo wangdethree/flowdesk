@@ -97,6 +97,33 @@ class NotificationAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['unread_count'], 2)
 
+    def test_clear_read_notifications_only_deletes_current_user_read_items(self):
+        """清理已读通知只影响当前用户的已读通知。"""
+
+        read_notification = self.create_notification(title='已读通知', is_read=True)
+        unread_notification = self.create_notification(title='未读通知')
+        other_read_notification = self.create_notification(
+            recipient=self.other_user,
+            title='别人的已读通知',
+            is_read=True,
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.delete(reverse('notification-clear-read'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['deleted_count'], 1)
+        self.assertFalse(Notification.objects.filter(id=read_notification.id).exists())
+        self.assertTrue(Notification.objects.filter(id=unread_notification.id).exists())
+        self.assertTrue(Notification.objects.filter(id=other_read_notification.id).exists())
+
+    def test_clear_read_notifications_requires_authentication(self):
+        """清理已读通知必须登录。"""
+
+        response = self.client.delete(reverse('notification-clear-read'))
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
     def test_filter_notifications_by_read_status(self):
         """is_read 查询参数可以区分当前用户的已读和未读通知。"""
 
