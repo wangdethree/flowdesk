@@ -16,6 +16,7 @@ from apps.tickets.models import (
     TicketAttachment,
     TicketCategory,
     TicketComment,
+    TicketFeedback,
     TicketPriority,
     TicketStatus,
     TicketTag,
@@ -829,6 +830,204 @@ class TicketAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(ticket.status, TicketStatus.RESOLVED)
+
+    def test_creator_can_submit_feedback_for_closed_ticket(self):
+        """工单创建人可以评价已关闭工单，并通知处理人。"""
+
+        ticket = Ticket.objects.create(
+            title='评价测试工单',
+            description='验证关闭后可以评价处理结果。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.CLOSED,
+            closed_at=timezone.now(),
+            close_reason='用户确认可以关闭。',
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-feedback', args=[ticket.id]),
+            {'rating': 5, 'content': '处理很及时，问题已经解决。'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        feedback = TicketFeedback.objects.get(ticket=ticket)
+        self.assertEqual(feedback.created_by, self.creator)
+        self.assertEqual(feedback.rating, 5)
+        self.assertEqual(feedback.content, '处理很及时，问题已经解决。')
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.creator,
+                action=AuditAction.FEEDBACK,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+                metadata={
+                    'feedback_id': feedback.id,
+                    'rating': 5,
+                    'content': '处理很及时，问题已经解决。',
+                    'created': True,
+                },
+            ).exists()
+        )
+        notification = Notification.objects.get(
+            recipient=self.assignee,
+            notification_type=NotificationType.TICKET_FEEDBACK_SUBMITTED,
+        )
+        self.assertEqual(notification.metadata['feedback_id'], feedback.id)
+        self.assertEqual(notification.metadata['rating'], 5)
+
+    def test_creator_can_update_existing_feedback(self):
+        """同一张工单重复评价时更新原评价，不创建多条评价。"""
+
+        ticket = Ticket.objects.create(
+            title='重复评价测试工单',
+            description='验证一张工单只保留一份最终评价。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.CLOSED,
+            closed_at=timezone.now(),
+            close_reason='用户确认可以关闭。',
+        )
+        TicketFeedback.objects.create(
+            ticket=ticket,
+            created_by=self.creator,
+            rating=3,
+            content='第一次评价。',
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-feedback', args=[ticket.id]),
+            {'rating': 4, 'content': '补充评价后更准确。'},
+            format='json',
+        )
+        feedback = TicketFeedback.objects.get(ticket=ticket)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(TicketFeedback.objects.filter(ticket=ticket).count(), 1)
+        self.assertEqual(feedback.rating, 4)
+        self.assertEqual(feedback.content, '补充评价后更准确。')
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.creator,
+                action=AuditAction.FEEDBACK,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+                metadata={
+                    'feedback_id': feedback.id,
+                    'rating': 4,
+                    'content': '补充评价后更准确。',
+                    'created': False,
+                },
+            ).exists()
+        )
+
+    def test_assignee_can_retrieve_ticket_feedback(self):
+        """工单参与者可以查看已有评价。"""
+
+        ticket = Ticket.objects.create(
+            title='查询评价测试工单',
+            description='处理人可以看到创建人的评价反馈。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.CLOSED,
+            closed_at=timezone.now(),
+        )
+        feedback = TicketFeedback.objects.create(
+            ticket=ticket,
+            created_by=self.creator,
+            rating=5,
+            content='处理结果满意。',
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.get(reverse('ticket-feedback', args=[ticket.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['id'], feedback.id)
+        self.assertEqual(response.data['rating'], 5)
+
+    def test_feedback_requires_closed_ticket(self):
+        """未关闭工单不能评价，避免流程还没结束就提前打分。"""
+
+        ticket = Ticket.objects.create(
+            title='未关闭不可评价',
+            description='工单还在处理中。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.RESOLVED,
+            resolved_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-feedback', args=[ticket.id]),
+            {'rating': 5, 'content': '提前评价。'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(TicketFeedback.objects.filter(ticket=ticket).exists())
+
+    def test_assignee_cannot_submit_ticket_feedback(self):
+        """处理人不能给自己处理的工单评价。"""
+
+        ticket = Ticket.objects.create(
+            title='处理人不可评价工单',
+            description='评价必须来自创建人。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.CLOSED,
+            closed_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.post(
+            reverse('ticket-feedback', args=[ticket.id]),
+            {'rating': 5, 'content': '处理人尝试自评。'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(TicketFeedback.objects.filter(ticket=ticket).exists())
+
+    def test_feedback_rating_must_be_between_one_and_five(self):
+        """评分只能在 1 到 5 之间。"""
+
+        ticket = Ticket.objects.create(
+            title='非法评分测试工单',
+            description='验证评分范围校验。',
+            creator=self.creator,
+            status=TicketStatus.CLOSED,
+            closed_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-feedback', args=[ticket.id]),
+            {'rating': 6, 'content': '非法评分。'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_missing_ticket_feedback_returns_not_found(self):
+        """工单还没有评价时，查询评价返回 404。"""
+
+        ticket = Ticket.objects.create(
+            title='没有评价的工单',
+            description='验证空评价查询。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.CLOSED,
+            closed_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.get(reverse('ticket-feedback', args=[ticket.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_creator_can_assign_ticket(self):
         """工单创建人可以把工单分配给处理人。"""
