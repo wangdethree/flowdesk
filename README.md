@@ -97,6 +97,8 @@ docker compose down
 | POST | `/api/tickets/{id}/attachments/` | 上传工单附件 |
 | GET | `/api/tickets/{id}/comments/` | 查询工单评论和处理记录 |
 | POST | `/api/tickets/{id}/comments/` | 新增工单评论或处理记录 |
+| GET | `/api/tickets/{id}/feedback/` | 查询工单评价 |
+| POST | `/api/tickets/{id}/feedback/` | 创建或更新工单评价 |
 
 ## 当前数据模型
 
@@ -106,6 +108,7 @@ docker compose down
 | `TicketTag` | 工单标签表，用于给工单补充多个横向分类 |
 | `TicketComment` | 工单记录表，保存评论和处理记录 |
 | `TicketAttachment` | 工单附件表，保存上传文件路径、原始文件名、文件大小和上传人 |
+| `TicketFeedback` | 工单评价表，保存关闭后的评分和反馈内容 |
 | `AuditLog` | 审计日志表，保存用户对业务资源的关键操作记录 |
 | `Notification` | 站内通知表，保存通知接收人、通知类型、已读状态和业务目标 |
 
@@ -124,6 +127,8 @@ docker compose down
 - 工单参与者可以上传和查看附件，单个附件大小限制为 5MB。
 - 状态流转受后端限制，关闭和重开必须走专门接口并填写原因。
 - 只有管理员或工单创建人可以关闭或重开工单，操作会写入审计日志并通知相关参与者。
+- 只有工单创建人可以评价已关闭工单，一张工单只保留一份最终评价。
+- 工单评价评分范围为 1 到 5，评价后会写入审计日志并通知处理人。
 - 创建、更新、删除工单以及新增处理记录时，会自动写入审计日志。
 - 通知是用户私有数据，普通用户只能查询和标记自己的通知。
 
