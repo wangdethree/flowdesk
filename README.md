@@ -2,12 +2,55 @@
 
 FlowDesk 是一个基于 Django REST framework 的企业工单流转后端项目。
 
-## Day 1 目标
+项目面向企业内部 IT 支持、业务问题处理、需求咨询等场景，提供从工单创建、分配、处理、关闭、评价到统计分析的一套完整后端能力。
 
-- 创建 Django 项目骨架。
-- 注册 Django REST framework 和项目 app。
-- 添加健康检查接口。
-- 保持第一版足够小，方便理解和面试讲解。
+## 技术栈
+
+- Python 3.11
+- Django 5
+- Django REST framework
+- Simple JWT
+- drf-spectacular
+- SQLite，本地开发默认数据库
+- Gunicorn
+- Docker Compose
+
+## 核心能力
+
+- 用户注册、JWT 登录、资料更新和修改密码。
+- 工单 CRUD、分页、搜索、筛选和排序。
+- 工单分配、优先级调整、催办、关注、标签管理。
+- 工单评论、处理记录、附件上传和时间线聚合。
+- 工单关闭、重开、评价和评价统计。
+- 站内通知、已读管理、未读数、通知筛选和已读清理。
+- 审计日志，记录关键业务操作。
+- OpenAPI、Swagger UI 和 ReDoc 接口文档。
+- 自动化测试覆盖主要业务规则。
+
+## 业务流程
+
+```text
+用户创建工单
+  -> 创建人或管理员分配处理人
+  -> 处理人更新状态、补充处理记录、上传附件
+  -> 参与者可关注、评论、催办
+  -> 创建人或管理员关闭工单并填写原因
+  -> 创建人对已关闭工单进行评价
+  -> 统计接口汇总工单数量、分布和评价指标
+```
+
+## 目录结构
+
+```text
+apps/
+  analytics/      工单统计摘要
+  audit/          审计日志
+  common/         健康检查和公共能力
+  notifications/ 站内通知
+  tickets/        工单主业务
+  users/          用户和认证
+config/           Django 项目配置
+```
 
 ## 本地启动
 
@@ -30,6 +73,26 @@ cp .env.example .env
 curl http://127.0.0.1:8000/api/health/
 ```
 
+接口文档：
+
+- Swagger UI: `http://127.0.0.1:8000/api/docs/`
+- ReDoc: `http://127.0.0.1:8000/api/redoc/`
+- OpenAPI schema: `http://127.0.0.1:8000/api/schema/`
+
+## 测试
+
+```bash
+.venv/bin/python manage.py test
+```
+
+常用检查：
+
+```bash
+.venv/bin/python manage.py check
+.venv/bin/python manage.py makemigrations --check --dry-run
+.venv/bin/python manage.py spectacular --file /tmp/flowdesk-schema.yml --validate
+```
+
 ## Docker 启动
 
 第一版 Docker 主要用于模拟部署环境。容器启动时会先执行数据库迁移，再使用 Gunicorn 启动服务。
@@ -49,15 +112,6 @@ curl http://127.0.0.1:8000/api/health/
 ```bash
 docker compose down
 ```
-
-## MVP 范围
-
-- 用户注册和 JWT 登录。
-- 工单增删改查。
-- 工单状态流转。
-- 评论和处理记录。
-- 基础角色权限控制。
-- 分页、筛选和搜索。
 
 ## 当前接口
 
@@ -189,3 +243,12 @@ curl "http://127.0.0.1:8000/api/notifications/?is_read=false&notification_type=t
 | `notification_type` | 按通知类型筛选，例如 `ticket_assigned`、`ticket_commented`、`ticket_reminded` |
 | `search` | 按通知标题和内容搜索关键词 |
 | `ordering` | 排序字段，例如 `-created_at` 或 `read_at` |
+
+## 面试讲解重点
+
+- 权限设计：普通用户只能访问自己创建、分配给自己或自己关注的工单，管理员可以查看全局数据。
+- 状态流转：关闭和重开使用专门接口，强制填写原因，避免普通更新绕过业务规则。
+- 审计日志：关键操作统一写审计，方便追踪谁在什么时候做了什么。
+- 通知系统：业务事件触发站内通知，并支持已读、未读、筛选和清理。
+- 数据统计：统计接口复用可见工单范围，避免普通用户通过统计数据看到无权限信息。
+- 测试覆盖：对权限、状态流转、通知、评价、统计等核心规则都有自动化测试。
