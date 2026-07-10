@@ -85,7 +85,9 @@ docker compose down
 | PUT/PATCH | `/api/tickets/{id}/` | 更新工单 |
 | DELETE | `/api/tickets/{id}/` | 删除工单 |
 | POST | `/api/tickets/{id}/assign/` | 分配或取消分配工单处理人 |
+| POST | `/api/tickets/{id}/close/` | 关闭工单并填写关闭原因 |
 | POST | `/api/tickets/{id}/remind/` | 催办工单 |
+| POST | `/api/tickets/{id}/reopen/` | 重开已关闭工单并填写重开原因 |
 | POST | `/api/tickets/{id}/set-priority/` | 调整工单优先级 |
 | POST | `/api/tickets/{id}/set-tags/` | 设置工单标签 |
 | POST | `/api/tickets/{id}/watch/` | 关注工单 |
@@ -100,7 +102,7 @@ docker compose down
 
 | 模型 | 说明 |
 | --- | --- |
-| `Ticket` | 工单主表，保存标题、描述、分类、优先级、状态、创建人、处理人、关注人、标签和时间字段 |
+| `Ticket` | 工单主表，保存标题、描述、分类、优先级、状态、创建人、处理人、关注人、标签、关闭原因、重开原因和时间字段 |
 | `TicketTag` | 工单标签表，用于给工单补充多个横向分类 |
 | `TicketComment` | 工单记录表，保存评论和处理记录 |
 | `TicketAttachment` | 工单附件表，保存上传文件路径、原始文件名、文件大小和上传人 |
@@ -120,7 +122,8 @@ docker compose down
 - 只有管理员或工单创建人可以维护工单标签。
 - 工单参与者可以关注或取消关注工单，关注人能收到评论和状态变化通知。
 - 工单参与者可以上传和查看附件，单个附件大小限制为 5MB。
-- 状态流转受后端限制，已关闭工单不能直接改回待处理。
+- 状态流转受后端限制，关闭和重开必须走专门接口并填写原因。
+- 只有管理员或工单创建人可以关闭或重开工单，操作会写入审计日志并通知相关参与者。
 - 创建、更新、删除工单以及新增处理记录时，会自动写入审计日志。
 - 通知是用户私有数据，普通用户只能查询和标记自己的通知。
 
