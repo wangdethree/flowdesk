@@ -13,6 +13,7 @@ from apps.tickets.models import Ticket
 from apps.tickets.permissions import IsTicketParticipantOrStaff
 from apps.tickets.serializers import (
     TicketAssignmentSerializer,
+    TicketAttachmentSerializer,
     TicketCommentSerializer,
     TicketSerializer,
 )
@@ -102,6 +103,18 @@ from apps.tickets.services import (
             )
         ],
     ),
+    attachments=extend_schema(
+        request=TicketAttachmentSerializer,
+        responses=TicketAttachmentSerializer(many=True),
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
 )
 class TicketViewSet(viewsets.ModelViewSet):
     """工单 CRUD 接口。
@@ -129,6 +142,8 @@ class TicketViewSet(viewsets.ModelViewSet):
         # comments 是下面自定义的评论接口，输入输出结构和工单主表不同。
         if self.action == 'comments':
             return TicketCommentSerializer
+        if self.action == 'attachments':
+            return TicketAttachmentSerializer
         if self.action == 'audit_logs':
             return AuditLogSerializer
         if self.action == 'assign':
@@ -273,6 +288,42 @@ class TicketViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(logs, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['get', 'post'])
+    def attachments(self, request, pk=None):
+        """查询或上传某张工单下的附件。
+
+        附件依附于工单，所以接口挂在 /api/tickets/{id}/attachments/。
+        通过 get_object() 复用工单权限，确保无关用户不能查看或上传附件。
+        """
+
+        ticket = self.get_object()
+
+        if request.method == 'GET':
+            attachments = ticket.attachments.select_related('uploaded_by')
+            page = self.paginate_queryset(attachments)
+            if page is not None:
+                serializer = self.get_serializer(page, many=True)
+                return self.get_paginated_response(serializer.data)
+
+            serializer = self.get_serializer(attachments, many=True)
+            return Response(serializer.data)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        uploaded_file = serializer.validated_data['file']
+        attachment = serializer.save(
+            ticket=ticket,
+            uploaded_by=request.user,
+            original_filename=uploaded_file.name,
+            content_type=getattr(uploaded_file, 'content_type', ''),
+            size=uploaded_file.size,
+        )
+
+        return Response(
+            self.get_serializer(attachment).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=['get', 'post'])
     def comments(self, request, pk=None):

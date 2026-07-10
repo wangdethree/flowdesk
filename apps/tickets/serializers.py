@@ -2,10 +2,13 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.tickets.models import Ticket, TicketComment, TicketStatus
+from apps.tickets.models import Ticket, TicketAttachment, TicketComment, TicketStatus
 
 
 User = get_user_model()
+
+
+MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024
 
 
 # 工单状态流转白名单。
@@ -152,6 +155,51 @@ class TicketCommentSerializer(serializers.ModelSerializer):
             'author_username',
             'created_at',
         )
+
+
+class TicketAttachmentSerializer(serializers.ModelSerializer):
+    """工单附件序列化器。
+
+    上传接口只需要前端提交 file，其他字段都由后端根据文件对象和当前用户自动补齐。
+    这样可以避免前端伪造上传人、文件大小或所属工单。
+    """
+
+    uploaded_by_username = serializers.CharField(source='uploaded_by.username', read_only=True)
+
+    class Meta:
+        model = TicketAttachment
+        fields = (
+            'id',
+            'ticket',
+            'uploaded_by',
+            'uploaded_by_username',
+            'file',
+            'original_filename',
+            'content_type',
+            'size',
+            'created_at',
+        )
+        read_only_fields = (
+            'id',
+            'ticket',
+            'uploaded_by',
+            'uploaded_by_username',
+            'original_filename',
+            'content_type',
+            'size',
+            'created_at',
+        )
+
+    def validate_file(self, file):
+        """限制第一版附件大小。
+
+        文件上传如果不限制大小，恶意请求可能很快占满服务器磁盘。
+        第一版先限制 5MB，后续可以改成环境变量或按文件类型分别配置。
+        """
+
+        if file.size > MAX_ATTACHMENT_SIZE:
+            raise serializers.ValidationError('附件大小不能超过 5MB。')
+        return file
 
 
 class TicketAssignmentSerializer(serializers.Serializer):
