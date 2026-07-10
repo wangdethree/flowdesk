@@ -15,10 +15,18 @@ class TicketAdmin(admin.ModelAdmin):
         'status',
         'creator',
         'assignee',
+        'closed_at',
         'created_at',
     )
     list_filter = ('status', 'priority', 'category')
-    search_fields = ('title', 'description', 'creator__username', 'assignee__username')
+    search_fields = (
+        'title',
+        'description',
+        'close_reason',
+        'reopen_reason',
+        'creator__username',
+        'assignee__username',
+    )
     filter_horizontal = ('watchers', 'tags')
     ordering = ('-created_at',)
 

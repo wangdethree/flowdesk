@@ -125,6 +125,10 @@ class Ticket(models.Model):
     due_at = models.DateTimeField('截止时间', null=True, blank=True)
     resolved_at = models.DateTimeField('解决时间', null=True, blank=True)
     closed_at = models.DateTimeField('关闭时间', null=True, blank=True)
+    # 关闭原因用于记录为什么这张工单可以进入终态，方便后续复盘和审计。
+    close_reason = models.TextField('关闭原因', blank=True)
+    # 重开原因用于记录为什么已关闭工单需要重新进入处理流程。
+    reopen_reason = models.TextField('重开原因', blank=True)
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
     updated_at = models.DateTimeField('更新时间', auto_now=True)
 
