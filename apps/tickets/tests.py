@@ -1,7 +1,9 @@
+import tempfile
 from datetime import timedelta
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -9,7 +11,14 @@ from rest_framework.test import APITestCase
 
 from apps.audit.models import AuditAction, AuditLog
 from apps.notifications.models import Notification, NotificationType
-from apps.tickets.models import Ticket, TicketCategory, TicketComment, TicketPriority, TicketStatus
+from apps.tickets.models import (
+    Ticket,
+    TicketAttachment,
+    TicketCategory,
+    TicketComment,
+    TicketPriority,
+    TicketStatus,
+)
 
 
 User = get_user_model()
@@ -95,6 +104,14 @@ class TicketModelTests(TestCase):
 
 class TicketAPITests(APITestCase):
     def setUp(self):
+        # 文件上传测试会真实写入临时文件。
+        # 这里把 MEDIA_ROOT 指到临时目录，测试结束后自动清理，避免污染项目本地 media/。
+        self.media_root = tempfile.TemporaryDirectory()
+        self.addCleanup(self.media_root.cleanup)
+        self.media_override = override_settings(MEDIA_ROOT=self.media_root.name)
+        self.media_override.enable()
+        self.addCleanup(self.media_override.disable)
+
         self.creator = User.objects.create_user(username='creator_api', password='TestPass123')
         self.assignee = User.objects.create_user(username='assignee_api', password='TestPass123')
         self.other_user = User.objects.create_user(username='other_api', password='TestPass123')
@@ -723,6 +740,84 @@ class TicketAPITests(APITestCase):
         response = self.client.get(reverse('ticket-audit-logs', args=[ticket.id]))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_participant_can_upload_and_list_ticket_attachments(self):
+        """工单参与者可以上传并查看这张工单的附件。"""
+
+        ticket = Ticket.objects.create(
+            title='附件测试工单',
+            description='用于验证附件上传和列表。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        upload_file = SimpleUploadedFile(
+            'error.log',
+            b'Traceback: connection refused',
+            content_type='text/plain',
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        create_response = self.client.post(
+            reverse('ticket-attachments', args=[ticket.id]),
+            {'file': upload_file},
+            format='multipart',
+        )
+        list_response = self.client.get(reverse('ticket-attachments', args=[ticket.id]))
+        attachment = TicketAttachment.objects.get(ticket=ticket)
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_response.data['uploaded_by'], self.assignee.id)
+        self.assertEqual(create_response.data['original_filename'], 'error.log')
+        self.assertEqual(create_response.data['content_type'], 'text/plain')
+        self.assertEqual(create_response.data['size'], len(b'Traceback: connection refused'))
+        self.assertTrue(attachment.file.storage.exists(attachment.file.name))
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(list_response.data['count'], 1)
+        self.assertEqual(list_response.data['results'][0]['original_filename'], 'error.log')
+
+    def test_unrelated_user_cannot_upload_ticket_attachment(self):
+        """无关用户不能给别人的工单上传附件。"""
+
+        ticket = Ticket.objects.create(
+            title='无关用户不可上传附件',
+            description='无关用户不应该给这张工单补附件。',
+            creator=self.creator,
+        )
+        upload_file = SimpleUploadedFile('error.log', b'log content', content_type='text/plain')
+        self.client.force_authenticate(user=self.other_user)
+
+        response = self.client.post(
+            reverse('ticket-attachments', args=[ticket.id]),
+            {'file': upload_file},
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(TicketAttachment.objects.exists())
+
+    def test_ticket_attachment_size_limit(self):
+        """附件超过 5MB 时返回 400，避免接口被大文件打满磁盘。"""
+
+        ticket = Ticket.objects.create(
+            title='附件大小限制工单',
+            description='用于验证附件大小限制。',
+            creator=self.creator,
+        )
+        oversized_file = SimpleUploadedFile(
+            'too-large.log',
+            b'x' * (5 * 1024 * 1024 + 1),
+            content_type='text/plain',
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-attachments', args=[ticket.id]),
+            {'file': oversized_file},
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(TicketAttachment.objects.exists())
 
     def test_participant_can_create_and_list_ticket_comments(self):
         ticket = Ticket.objects.create(
