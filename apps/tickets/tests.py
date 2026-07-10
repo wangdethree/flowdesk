@@ -796,6 +796,91 @@ class TicketAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_participant_can_remind_ticket_assignee(self):
+        """工单参与者可以催办未完成且已分配的工单。"""
+
+        ticket = Ticket.objects.create(
+            title='催办测试工单',
+            description='验证催办会通知处理人并写审计日志。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-remind', args=[ticket.id]),
+            {'message': '客户已经二次催促，请优先处理。'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        notification = Notification.objects.get(
+            recipient=self.assignee,
+            notification_type=NotificationType.TICKET_REMINDED,
+        )
+        self.assertEqual(notification.target_id, str(ticket.id))
+        self.assertEqual(notification.metadata['message'], '客户已经二次催促，请优先处理。')
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.creator,
+                action=AuditAction.REMIND,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+                metadata={
+                    'assignee_id': self.assignee.id,
+                    'message': '客户已经二次催促，请优先处理。',
+                },
+            ).exists()
+        )
+
+    def test_cannot_remind_unassigned_ticket(self):
+        """未分配处理人的工单不能催办。"""
+
+        ticket = Ticket.objects.create(
+            title='未分配不可催办',
+            description='没有处理人时不知道提醒谁。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(reverse('ticket-remind', args=[ticket.id]), {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Notification.objects.filter(notification_type=NotificationType.TICKET_REMINDED).exists())
+
+    def test_cannot_remind_finished_ticket(self):
+        """已解决或已关闭工单不能催办。"""
+
+        ticket = Ticket.objects.create(
+            title='已解决不可催办',
+            description='终态工单不需要再催办。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.RESOLVED,
+            resolved_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(reverse('ticket-remind', args=[ticket.id]), {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Notification.objects.filter(notification_type=NotificationType.TICKET_REMINDED).exists())
+
+    def test_unrelated_user_cannot_remind_ticket(self):
+        """无关用户不能催办自己不可见的工单。"""
+
+        ticket = Ticket.objects.create(
+            title='无关用户不可催办',
+            description='不可见工单不能催办。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        self.client.force_authenticate(user=self.other_user)
+
+        response = self.client.post(reverse('ticket-remind', args=[ticket.id]), {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_participant_can_watch_and_unwatch_ticket(self):
         """工单参与者可以关注和取消关注工单。"""
 
