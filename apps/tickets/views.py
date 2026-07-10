@@ -35,6 +35,8 @@ from apps.tickets.services import (
             OpenApiParameter('category', OpenApiTypes.STR, OpenApiParameter.QUERY, description='按分类筛选'),
             OpenApiParameter('assignee', OpenApiTypes.INT, OpenApiParameter.QUERY, description='按处理人用户 ID 筛选'),
             OpenApiParameter('creator', OpenApiTypes.INT, OpenApiParameter.QUERY, description='按创建人用户 ID 筛选'),
+            OpenApiParameter('tag', OpenApiTypes.INT, OpenApiParameter.QUERY, description='按标签 ID 筛选'),
+            OpenApiParameter('tag_name', OpenApiTypes.STR, OpenApiParameter.QUERY, description='按标签名称筛选'),
             OpenApiParameter('mine', OpenApiTypes.STR, OpenApiParameter.QUERY, description='筛选我的工单：created、assigned 或 watched'),
             OpenApiParameter('overdue', OpenApiTypes.BOOL, OpenApiParameter.QUERY, description='是否只看超时工单'),
             OpenApiParameter('has_assignee', OpenApiTypes.BOOL, OpenApiParameter.QUERY, description='是否只看已分配工单'),

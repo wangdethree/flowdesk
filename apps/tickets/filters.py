@@ -29,6 +29,8 @@ class TicketQueryParamSerializer(serializers.Serializer):
     category = serializers.ChoiceField(choices=TicketCategory.choices, required=False)
     assignee = serializers.IntegerField(required=False, min_value=1)
     creator = serializers.IntegerField(required=False, min_value=1)
+    tag = serializers.IntegerField(required=False, min_value=1)
+    tag_name = serializers.CharField(required=False, max_length=40)
     overdue = QueryBooleanField(required=False)
     has_assignee = QueryBooleanField(required=False)
     mine = serializers.ChoiceField(choices=('created', 'assigned', 'watched'), required=False)
@@ -59,6 +61,10 @@ class TicketFilterBackend(BaseFilterBackend):
             queryset = queryset.filter(assignee_id=filters['assignee'])
         if 'creator' in filters:
             queryset = queryset.filter(creator_id=filters['creator'])
+        if 'tag' in filters:
+            queryset = queryset.filter(tags__id=filters['tag'])
+        if 'tag_name' in filters:
+            queryset = queryset.filter(tags__name=filters['tag_name'])
 
         # mine 用来快速查询“我创建的”或“分配给我的”，这是后台系统很常见的列表筛选。
         if filters.get('mine') == 'created':
@@ -86,4 +92,4 @@ class TicketFilterBackend(BaseFilterBackend):
         if 'has_assignee' in filters:
             queryset = queryset.filter(assignee__isnull=not filters['has_assignee'])
 
-        return queryset
+        return queryset.distinct()
