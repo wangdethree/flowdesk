@@ -40,6 +40,29 @@ class TicketStatus(models.TextChoices):
     CLOSED = 'closed', '已关闭'
 
 
+class TicketTag(models.Model):
+    """工单标签表。
+
+    标签用于给工单补充横向分类，例如“线上故障”“VIP客户”“支付模块”。
+    它和 category 不同：category 是单选主分类，tags 可以有多个。
+    """
+
+    name = models.CharField('名称', max_length=40, unique=True)
+    color = models.CharField('颜色', max_length=20, default='#64748b')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '工单标签'
+        verbose_name_plural = '工单标签'
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['name']),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class Ticket(models.Model):
     """工单主表。
 
@@ -89,6 +112,13 @@ class Ticket(models.Model):
         settings.AUTH_USER_MODEL,
         related_name='watched_tickets',
         verbose_name='关注人',
+        blank=True,
+    )
+    # 标签是对工单的轻量分类补充。第一版允许创建人/管理员通过接口维护。
+    tags = models.ManyToManyField(
+        TicketTag,
+        related_name='tickets',
+        verbose_name='标签',
         blank=True,
     )
 
