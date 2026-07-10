@@ -41,6 +41,26 @@ def notify_ticket_assigned(*, ticket, actor):
     )
 
 
+def notify_ticket_reminded(*, ticket, actor, message=''):
+    """催办工单时通知当前处理人。
+
+    催办只发给 assignee。没有处理人的工单无法催办，因为不知道应该提醒谁。
+    """
+
+    return create_notification(
+        recipient=ticket.assignee,
+        notification_type=NotificationType.TICKET_REMINDED,
+        title='你有一张工单被催办',
+        message=message or f'工单「{ticket.title}」被催办，请尽快处理。',
+        target=ticket,
+        metadata={
+            'ticket_id': ticket.id,
+            'actor_id': actor.id,
+            'message': message,
+        },
+    )
+
+
 def notify_ticket_commented(*, ticket, comment, actor):
     """工单新增评论/处理记录后通知其他参与者。
 

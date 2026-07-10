@@ -16,6 +16,7 @@ from apps.tickets.serializers import (
     TicketAttachmentSerializer,
     TicketCommentSerializer,
     TicketSerializer,
+    TicketReminderSerializer,
     TicketTagAssignmentSerializer,
     TicketTagSerializer,
 )
@@ -23,6 +24,7 @@ from apps.tickets.services import (
     assign_ticket,
     notify_ticket_assigned,
     notify_ticket_commented,
+    notify_ticket_reminded,
     notify_ticket_status_changed,
 )
 
@@ -86,6 +88,18 @@ from apps.tickets.services import (
     ),
     assign=extend_schema(
         request=TicketAssignmentSerializer,
+        responses=TicketSerializer,
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
+    remind=extend_schema(
+        request=TicketReminderSerializer,
         responses=TicketSerializer,
         parameters=[
             OpenApiParameter(
@@ -186,6 +200,8 @@ class TicketViewSet(viewsets.ModelViewSet):
             return AuditLogSerializer
         if self.action == 'assign':
             return TicketAssignmentSerializer
+        if self.action == 'remind':
+            return TicketReminderSerializer
         if self.action == 'set_tags':
             return TicketTagAssignmentSerializer
         return TicketSerializer
@@ -311,6 +327,43 @@ class TicketViewSet(viewsets.ModelViewSet):
         notify_ticket_assigned(ticket=ticket, actor=request.user)
 
         # 分配完成后返回完整工单，前端可以直接刷新当前详情页。
+        return Response(TicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['post'])
+    def remind(self, request, pk=None):
+        """催办工单。
+
+        催办不会改变工单状态，只会通知当前处理人，并写入审计日志。
+        已完成工单和未分配工单不能催办。
+        """
+
+        ticket = self.get_object()
+        if ticket.is_finished:
+            return Response(
+                {'detail': '已完成或已关闭的工单不能催办。'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if ticket.assignee_id is None:
+            return Response(
+                {'detail': '未分配处理人的工单不能催办。'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        message = serializer.validated_data.get('message', '')
+
+        notify_ticket_reminded(ticket=ticket, actor=request.user, message=message)
+        create_audit_log(
+            actor=request.user,
+            action=AuditAction.REMIND,
+            target=ticket,
+            description='催办工单',
+            metadata={
+                'assignee_id': ticket.assignee_id,
+                'message': message,
+            },
+        )
         return Response(TicketSerializer(ticket).data)
 
     @action(detail=True, methods=['post'], url_path='set-tags')

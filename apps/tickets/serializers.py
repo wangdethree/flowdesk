@@ -258,3 +258,12 @@ class TicketTagAssignmentSerializer(serializers.Serializer):
         many=True,
         required=True,
     )
+
+
+class TicketReminderSerializer(serializers.Serializer):
+    """工单催办接口入参。
+
+    message 是可选补充说明，例如“客户已经二次催促，请优先处理”。
+    """
+
+    message = serializers.CharField(required=False, allow_blank=True, max_length=200)
