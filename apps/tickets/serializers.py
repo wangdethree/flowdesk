@@ -123,6 +123,11 @@ class TicketSerializer(serializers.ModelSerializer):
         if value == old_status:
             return value
 
+        # 关闭工单必须留下原因，所以不允许普通 PATCH 直接改成 closed。
+        # 需要关闭时走 POST /api/tickets/{id}/close/，由专门接口校验 reason。
+        if value == TicketStatus.CLOSED:
+            raise serializers.ValidationError('请使用关闭工单接口，并填写关闭原因。')
+
         allowed_next_statuses = ALLOWED_STATUS_TRANSITIONS[old_status]
         if value not in allowed_next_statuses:
             raise serializers.ValidationError(
@@ -278,6 +283,24 @@ class TicketReminderSerializer(serializers.Serializer):
     """
 
     message = serializers.CharField(required=False, allow_blank=True, max_length=200)
+
+
+class TicketCloseSerializer(serializers.Serializer):
+    """关闭工单接口入参。
+
+    关闭是终态动作，必须说明原因，方便后续复盘为什么这张工单结束。
+    """
+
+    reason = serializers.CharField(max_length=500, trim_whitespace=True)
+
+
+class TicketReopenSerializer(serializers.Serializer):
+    """重开工单接口入参。
+
+    重开会把已关闭工单重新放回待处理流程，也必须说明原因。
+    """
+
+    reason = serializers.CharField(max_length=500, trim_whitespace=True)
 
 
 class TicketPriorityUpdateSerializer(serializers.Serializer):

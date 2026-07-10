@@ -14,8 +14,10 @@ from apps.tickets.permissions import IsTicketParticipantOrStaff
 from apps.tickets.serializers import (
     TicketAssignmentSerializer,
     TicketAttachmentSerializer,
+    TicketCloseSerializer,
     TicketCommentSerializer,
     TicketPriorityUpdateSerializer,
+    TicketReopenSerializer,
     TicketSerializer,
     TicketReminderSerializer,
     TicketTagAssignmentSerializer,
@@ -23,11 +25,13 @@ from apps.tickets.serializers import (
 )
 from apps.tickets.services import (
     assign_ticket,
+    close_ticket,
     notify_ticket_assigned,
     notify_ticket_commented,
     notify_ticket_priority_changed,
     notify_ticket_reminded,
     notify_ticket_status_changed,
+    reopen_ticket,
 )
 
 
@@ -102,6 +106,30 @@ from apps.tickets.services import (
     ),
     remind=extend_schema(
         request=TicketReminderSerializer,
+        responses=TicketSerializer,
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
+    close=extend_schema(
+        request=TicketCloseSerializer,
+        responses=TicketSerializer,
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
+    reopen=extend_schema(
+        request=TicketReopenSerializer,
         responses=TicketSerializer,
         parameters=[
             OpenApiParameter(
@@ -216,6 +244,10 @@ class TicketViewSet(viewsets.ModelViewSet):
             return TicketAssignmentSerializer
         if self.action == 'remind':
             return TicketReminderSerializer
+        if self.action == 'close':
+            return TicketCloseSerializer
+        if self.action == 'reopen':
+            return TicketReopenSerializer
         if self.action == 'set_priority':
             return TicketPriorityUpdateSerializer
         if self.action == 'set_tags':
@@ -379,6 +411,90 @@ class TicketViewSet(viewsets.ModelViewSet):
                 'assignee_id': ticket.assignee_id,
                 'message': message,
             },
+        )
+        return Response(TicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['post'])
+    def close(self, request, pk=None):
+        """关闭工单。
+
+        关闭是终态动作，第一版只允许管理员或创建人关闭，并且必须填写原因。
+        """
+
+        ticket = self.get_object()
+        if not request.user.is_staff and ticket.creator_id != request.user.id:
+            return Response(
+                {'detail': '只有管理员或工单创建人可以关闭工单。'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if ticket.status == TicketStatus.CLOSED:
+            return Response(
+                {'detail': '已关闭的工单不能重复关闭。'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data['reason']
+        old_status = close_ticket(ticket=ticket, reason=reason)
+        create_audit_log(
+            actor=request.user,
+            action=AuditAction.STATUS_CHANGE,
+            target=ticket,
+            description='关闭工单',
+            metadata={
+                'old_status': old_status,
+                'new_status': ticket.status,
+                'reason': reason,
+            },
+        )
+        notify_ticket_status_changed(
+            ticket=ticket,
+            actor=request.user,
+            old_status=old_status,
+            new_status=ticket.status,
+        )
+        return Response(TicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['post'])
+    def reopen(self, request, pk=None):
+        """重开工单。
+
+        重开会把已关闭工单重新放回待处理流程，所以同样只允许管理员或创建人操作。
+        """
+
+        ticket = self.get_object()
+        if not request.user.is_staff and ticket.creator_id != request.user.id:
+            return Response(
+                {'detail': '只有管理员或工单创建人可以重开工单。'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if ticket.status != TicketStatus.CLOSED:
+            return Response(
+                {'detail': '只有已关闭的工单可以重开。'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data['reason']
+        old_status = reopen_ticket(ticket=ticket, reason=reason)
+        create_audit_log(
+            actor=request.user,
+            action=AuditAction.STATUS_CHANGE,
+            target=ticket,
+            description='重开工单',
+            metadata={
+                'old_status': old_status,
+                'new_status': ticket.status,
+                'reason': reason,
+            },
+        )
+        notify_ticket_status_changed(
+            ticket=ticket,
+            actor=request.user,
+            old_status=old_status,
+            new_status=ticket.status,
         )
         return Response(TicketSerializer(ticket).data)
 

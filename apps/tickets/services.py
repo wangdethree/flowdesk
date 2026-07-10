@@ -1,5 +1,8 @@
+from django.utils import timezone
+
 from apps.notifications.models import NotificationType
 from apps.notifications.services import create_notification
+from apps.tickets.models import TicketStatus
 
 
 def assign_ticket(*, ticket, assignee):
@@ -20,6 +23,44 @@ def assign_ticket(*, ticket, assignee):
     ticket.assignee = assignee
     ticket.save(update_fields=['assignee', 'updated_at'])
     return old_assignee_id
+
+
+def close_ticket(*, ticket, reason):
+    """关闭工单并保存关闭原因。
+
+    关闭动作会进入终态，所以这里集中维护 status、closed_at 和 close_reason，
+    避免多个接口各自手写状态更新，后续规则变化时也更容易调整。
+    """
+
+    old_status = ticket.status
+    ticket.status = TicketStatus.CLOSED
+    ticket.closed_at = timezone.now()
+    ticket.close_reason = reason
+    ticket.save(update_fields=['status', 'closed_at', 'close_reason', 'updated_at'])
+    return old_status
+
+
+def reopen_ticket(*, ticket, reason):
+    """重开已关闭工单并保存重开原因。
+
+    重开后重新回到待处理状态，同时清空终态时间，避免列表和超时判断继续把它当成已结束工单。
+    """
+
+    old_status = ticket.status
+    ticket.status = TicketStatus.OPEN
+    ticket.resolved_at = None
+    ticket.closed_at = None
+    ticket.reopen_reason = reason
+    ticket.save(
+        update_fields=[
+            'status',
+            'resolved_at',
+            'closed_at',
+            'reopen_reason',
+            'updated_at',
+        ]
+    )
+    return old_status
 
 
 def notify_ticket_assigned(*, ticket, actor):
