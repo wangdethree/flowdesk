@@ -14,6 +14,8 @@ FlowDesk 是一个基于 Django REST framework 的企业工单流转后端项目
 - SQLite，本地开发默认数据库
 - Gunicorn
 - Docker Compose
+- Vue 3
+- Vite
 
 ## 核心能力
 
@@ -50,6 +52,7 @@ apps/
   tickets/        工单主业务
   users/          用户和认证
 config/           Django 项目配置
+frontend/         Vue 前端管理界面
 ```
 
 ## 本地启动
@@ -89,7 +92,8 @@ curl http://127.0.0.1:8000/api/health/
 4. 创建工单，再依次测试分配、评论、附件、关闭、评价。
 5. 查看 `/api/tickets/{id}/timeline/`，确认工单动态聚合正常。
 6. 查看 `/api/analytics/tickets/summary/`，确认统计摘要正常。
-7. 运行 `manage.py test`，确认自动化测试通过。
+7. 启动 `frontend/`，通过 Vue 管理后台完成登录、查看看板和工单详情。
+8. 运行 `manage.py test`，确认自动化测试通过。
 
 ## 测试
 
@@ -124,6 +128,24 @@ curl http://127.0.0.1:8000/api/health/
 ```bash
 docker compose down
 ```
+
+## 前端启动
+
+前端采用 Vue 3 + Vite，位于 `frontend/` 目录。
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+默认访问：
+
+```text
+http://127.0.0.1:5173/
+```
+
+本地开发时，Vite 会把 `/api` 请求代理到 `http://127.0.0.1:8000`，因此需要先启动 Django 后端。
 
 ## 当前接口
 
@@ -263,4 +285,5 @@ curl "http://127.0.0.1:8000/api/notifications/?is_read=false&notification_type=t
 - 审计日志：关键操作统一写审计，方便追踪谁在什么时候做了什么。
 - 通知系统：业务事件触发站内通知，并支持已读、未读、筛选和清理。
 - 数据统计：统计接口复用可见工单范围，避免普通用户通过统计数据看到无权限信息。
+- 前后端分离：后端提供 REST API，前端通过 Vue 3 + Vite 调用接口完成管理后台交互。
 - 测试覆盖：对权限、状态流转、通知、评价、统计等核心规则都有自动化测试。
