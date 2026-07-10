@@ -79,6 +79,18 @@ curl http://127.0.0.1:8000/api/health/
 - ReDoc: `http://127.0.0.1:8000/api/redoc/`
 - OpenAPI schema: `http://127.0.0.1:8000/api/schema/`
 
+## 快速验收
+
+本地启动后，可以按下面顺序快速确认核心能力：
+
+1. 访问 `/api/health/`，确认服务可用。
+2. 访问 `/api/docs/`，查看 Swagger UI。
+3. 注册用户并登录，拿到 JWT access token。
+4. 创建工单，再依次测试分配、评论、附件、关闭、评价。
+5. 查看 `/api/tickets/{id}/timeline/`，确认工单动态聚合正常。
+6. 查看 `/api/analytics/tickets/summary/`，确认统计摘要正常。
+7. 运行 `manage.py test`，确认自动化测试通过。
+
 ## 测试
 
 ```bash
