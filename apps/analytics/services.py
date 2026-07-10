@@ -1,7 +1,7 @@
-from django.db.models import Count, Q
+from django.db.models import Avg, Count, Q
 from django.utils import timezone
 
-from apps.tickets.models import Ticket, TicketCategory, TicketPriority, TicketStatus
+from apps.tickets.models import Ticket, TicketCategory, TicketFeedback, TicketPriority, TicketStatus
 
 
 def get_visible_ticket_queryset(user):
@@ -33,6 +33,37 @@ def build_choice_count_map(queryset, field_name, choices):
     return {value: count_map.get(value, 0) for value, _label in choices}
 
 
+def build_rating_count_map(queryset):
+    """按 1 到 5 星补齐评价数量。
+
+    评分是固定范围，接口返回完整的 1-5 星分布，前端画图时就不用再自己补 0。
+    """
+
+    grouped_rows = queryset.values('rating').order_by().annotate(count=Count('id'))
+    count_map = {row['rating']: row['count'] for row in grouped_rows}
+    return {rating: count_map.get(rating, 0) for rating in range(1, 6)}
+
+
+def get_feedback_summary(ticket_queryset):
+    """生成当前可见工单范围内的评价统计。
+
+    注意这里统计的是“当前用户可见工单”的评价，而不是全站评价。
+    这样普通用户不会通过统计接口推断出自己无权查看的工单反馈数据。
+    """
+
+    feedback_queryset = TicketFeedback.objects.filter(ticket__in=ticket_queryset)
+    feedback_count = feedback_queryset.count()
+    average_rating = feedback_queryset.aggregate(value=Avg('rating'))['value'] or 0
+    satisfied_count = feedback_queryset.filter(rating__gte=4).count()
+
+    return {
+        'feedback_count': feedback_count,
+        'average_rating': round(average_rating, 2),
+        'satisfaction_rate': round(satisfied_count / feedback_count, 2) if feedback_count else 0,
+        'by_rating': build_rating_count_map(feedback_queryset),
+    }
+
+
 def get_ticket_summary(user):
     """生成工单统计摘要。
 
@@ -50,7 +81,7 @@ def get_ticket_summary(user):
         status__in=unfinished_statuses,
     ).count()
 
-    return {
+    summary = {
         'total': queryset.count(),
         'created_by_me': queryset.filter(creator=user).count(),
         'assigned_to_me': queryset.filter(assignee=user).count(),
@@ -59,3 +90,5 @@ def get_ticket_summary(user):
         'by_priority': build_choice_count_map(queryset, 'priority', TicketPriority.choices),
         'by_category': build_choice_count_map(queryset, 'category', TicketCategory.choices),
     }
+    summary['feedback'] = get_feedback_summary(queryset)
+    return summary
