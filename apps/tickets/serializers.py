@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.tickets.models import Ticket, TicketAttachment, TicketComment, TicketStatus
+from apps.tickets.models import Ticket, TicketAttachment, TicketComment, TicketStatus, TicketTag
 
 
 User = get_user_model()
@@ -33,6 +33,7 @@ class TicketSerializer(serializers.ModelSerializer):
     creator_username = serializers.CharField(source='creator.username', read_only=True)
     assignee_username = serializers.CharField(source='assignee.username', read_only=True)
     watcher_usernames = serializers.SerializerMethodField()
+    tag_names = serializers.SerializerMethodField()
 
     # 处理人用用户 ID 提交即可，例如 {"assignee": 2}。
     # PrimaryKeyRelatedField 会检查这个 ID 对应的用户是否真的存在。
@@ -63,6 +64,8 @@ class TicketSerializer(serializers.ModelSerializer):
             'assignee_username',
             'watchers',
             'watcher_usernames',
+            'tags',
+            'tag_names',
             'due_at',
             'resolved_at',
             'closed_at',
@@ -79,6 +82,7 @@ class TicketSerializer(serializers.ModelSerializer):
             'assignee_username',
             'watchers',
             'watcher_usernames',
+            'tag_names',
             'resolved_at',
             'closed_at',
             'created_at',
@@ -91,6 +95,11 @@ class TicketSerializer(serializers.ModelSerializer):
         """返回关注人用户名列表，方便接口调试和前端直接展示。"""
 
         return [user.username for user in obj.watchers.all()]
+
+    def get_tag_names(self, obj) -> list[str]:
+        """返回标签名称列表，方便列表页直接展示。"""
+
+        return [tag.name for tag in obj.tags.all()]
 
     def validate_status(self, value):
         """校验状态流转是否合法。"""
@@ -222,5 +231,30 @@ class TicketAssignmentSerializer(serializers.Serializer):
     assignee = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
         allow_null=True,
+        required=True,
+    )
+
+
+class TicketTagSerializer(serializers.ModelSerializer):
+    """工单标签序列化器。
+
+    标签是可复用资源，创建后可以绑定到多张工单。
+    """
+
+    class Meta:
+        model = TicketTag
+        fields = ('id', 'name', 'color', 'created_at')
+        read_only_fields = ('id', 'created_at')
+
+
+class TicketTagAssignmentSerializer(serializers.Serializer):
+    """设置工单标签的入参序列化器。
+
+    前端提交标签 ID 列表即可，后端负责检查这些标签是否真实存在。
+    """
+
+    tags = serializers.PrimaryKeyRelatedField(
+        queryset=TicketTag.objects.all(),
+        many=True,
         required=True,
     )

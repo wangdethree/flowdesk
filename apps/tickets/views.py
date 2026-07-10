@@ -9,13 +9,15 @@ from apps.audit.models import AuditAction, AuditLog
 from apps.audit.serializers import AuditLogSerializer
 from apps.audit.services import create_audit_log
 from apps.tickets.filters import TicketFilterBackend
-from apps.tickets.models import Ticket
+from apps.tickets.models import Ticket, TicketTag
 from apps.tickets.permissions import IsTicketParticipantOrStaff
 from apps.tickets.serializers import (
     TicketAssignmentSerializer,
     TicketAttachmentSerializer,
     TicketCommentSerializer,
     TicketSerializer,
+    TicketTagAssignmentSerializer,
+    TicketTagSerializer,
 )
 from apps.tickets.services import (
     assign_ticket,
@@ -82,6 +84,18 @@ from apps.tickets.services import (
     ),
     assign=extend_schema(
         request=TicketAssignmentSerializer,
+        responses=TicketSerializer,
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
+    set_tags=extend_schema(
+        request=TicketTagAssignmentSerializer,
         responses=TicketSerializer,
         parameters=[
             OpenApiParameter(
@@ -170,6 +184,8 @@ class TicketViewSet(viewsets.ModelViewSet):
             return AuditLogSerializer
         if self.action == 'assign':
             return TicketAssignmentSerializer
+        if self.action == 'set_tags':
+            return TicketTagAssignmentSerializer
         return TicketSerializer
 
     def get_queryset(self):
@@ -184,8 +200,11 @@ class TicketViewSet(viewsets.ModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             return Ticket.objects.none()
 
-        # select_related 会把 creator 和 assignee 一起查出来；prefetch_related 用于多对多关注人。
-        queryset = Ticket.objects.select_related('creator', 'assignee').prefetch_related('watchers')
+        # select_related 会把 creator 和 assignee 一起查出来；prefetch_related 用于多对多关注人和标签。
+        queryset = Ticket.objects.select_related('creator', 'assignee').prefetch_related(
+            'watchers',
+            'tags',
+        )
         user = self.request.user
 
         # 普通用户只能看到“自己创建的工单”、“分配给自己的工单”或“自己关注的工单”。
@@ -290,6 +309,25 @@ class TicketViewSet(viewsets.ModelViewSet):
         notify_ticket_assigned(ticket=ticket, actor=request.user)
 
         # 分配完成后返回完整工单，前端可以直接刷新当前详情页。
+        return Response(TicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['post'], url_path='set-tags')
+    def set_tags(self, request, pk=None):
+        """设置某张工单的标签。
+
+        标签会影响工单归类和筛选，所以第一版只允许管理员或工单创建人维护。
+        """
+
+        ticket = self.get_object()
+        if not request.user.is_staff and ticket.creator_id != request.user.id:
+            return Response(
+                {'detail': '只有管理员或工单创建人可以设置标签。'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        ticket.tags.set(serializer.validated_data['tags'])
         return Response(TicketSerializer(ticket).data)
 
     @action(detail=True, methods=['post'])
@@ -405,3 +443,19 @@ class TicketViewSet(viewsets.ModelViewSet):
         )
         notify_ticket_commented(ticket=ticket, comment=comment, actor=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class TicketTagViewSet(viewsets.ModelViewSet):
+    """工单标签接口。
+
+    标签本身是全局资源，登录用户都可以查看；第一版为了方便项目演示，也允许登录用户创建。
+    真实公司内部系统里，可以再收紧为管理员维护。
+    """
+
+    serializer_class = TicketTagSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = TicketTag.objects.all()
+    search_fields = ['name']
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']

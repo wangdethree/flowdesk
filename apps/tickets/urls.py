@@ -1,6 +1,6 @@
 from rest_framework.routers import DefaultRouter
 
-from apps.tickets.views import TicketViewSet
+from apps.tickets.views import TicketTagViewSet, TicketViewSet
 
 
 # DefaultRouter 会根据 ViewSet 自动生成 RESTful 路由。
@@ -12,5 +12,6 @@ from apps.tickets.views import TicketViewSet
 # - DELETE /api/tickets/{id}/ 删除
 router = DefaultRouter()
 router.register('tickets', TicketViewSet, basename='ticket')
+router.register('ticket-tags', TicketTagViewSet, basename='ticket-tag')
 
 urlpatterns = router.urls
