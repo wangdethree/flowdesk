@@ -107,6 +107,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# 用户上传文件的本地存储目录。
+# 第一版先使用 Django 默认文件系统存储，后续部署到云服务器时可以替换成对象存储。
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # DRF 默认要求登录访问，单个公开接口再显式设置 AllowAny。

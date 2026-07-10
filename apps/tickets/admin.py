@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.tickets.models import Ticket, TicketComment
+from apps.tickets.models import Ticket, TicketAttachment, TicketComment
 
 
 @admin.register(Ticket)
@@ -29,4 +29,14 @@ class TicketCommentAdmin(admin.ModelAdmin):
     list_display = ('id', 'ticket', 'author', 'comment_type', 'created_at')
     list_filter = ('comment_type',)
     search_fields = ('content', 'ticket__title', 'author__username')
+    ordering = ('-created_at',)
+
+
+@admin.register(TicketAttachment)
+class TicketAttachmentAdmin(admin.ModelAdmin):
+    """工单附件后台管理配置。"""
+
+    list_display = ('id', 'ticket', 'uploaded_by', 'original_filename', 'size', 'created_at')
+    list_filter = ('content_type', 'created_at')
+    search_fields = ('ticket__title', 'uploaded_by__username', 'original_filename')
     ordering = ('-created_at',)

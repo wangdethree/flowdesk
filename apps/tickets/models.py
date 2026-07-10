@@ -3,6 +3,16 @@ from django.db import models
 from django.utils import timezone
 
 
+def ticket_attachment_upload_path(instance, filename):
+    """生成工单附件上传路径。
+
+    文件放在 tickets/<工单ID>/attachments/ 下，方便后续按工单归档和排查。
+    这里不把用户名放进路径，是为了避免用户名变化或特殊字符影响文件路径。
+    """
+
+    return f'tickets/{instance.ticket_id}/attachments/{filename}'
+
+
 class TicketCategory(models.TextChoices):
     """工单分类，用于后续按业务类型筛选和统计。"""
 
@@ -151,3 +161,41 @@ class TicketComment(models.Model):
 
     def __str__(self):
         return f'{self.get_comment_type_display()} - {self.ticket_id}'
+
+
+class TicketAttachment(models.Model):
+    """工单附件表。
+
+    附件用于保存截图、日志、报错文件等辅助排查材料。
+    文件本体由 FileField 存到 MEDIA_ROOT，数据库只保存文件路径和元数据。
+    """
+
+    ticket = models.ForeignKey(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name='attachments',
+        verbose_name='所属工单',
+    )
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='ticket_attachments',
+        verbose_name='上传人',
+    )
+    file = models.FileField('文件', upload_to=ticket_attachment_upload_path)
+    original_filename = models.CharField('原始文件名', max_length=255)
+    content_type = models.CharField('文件类型', max_length=120, blank=True)
+    size = models.PositiveIntegerField('文件大小', default=0)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '工单附件'
+        verbose_name_plural = '工单附件'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['ticket', '-created_at']),
+            models.Index(fields=['uploaded_by', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.original_filename} - {self.ticket_id}'
