@@ -78,6 +78,8 @@ docker compose down
 | PUT/PATCH | `/api/tickets/{id}/` | 更新工单 |
 | DELETE | `/api/tickets/{id}/` | 删除工单 |
 | POST | `/api/tickets/{id}/assign/` | 分配或取消分配工单处理人 |
+| POST | `/api/tickets/{id}/watch/` | 关注工单 |
+| POST | `/api/tickets/{id}/unwatch/` | 取消关注工单 |
 | GET | `/api/tickets/{id}/audit-logs/` | 查询工单操作历史 |
 | GET | `/api/tickets/{id}/attachments/` | 查询工单附件列表 |
 | POST | `/api/tickets/{id}/attachments/` | 上传工单附件 |
@@ -88,7 +90,7 @@ docker compose down
 
 | 模型 | 说明 |
 | --- | --- |
-| `Ticket` | 工单主表，保存标题、描述、分类、优先级、状态、创建人、处理人和时间字段 |
+| `Ticket` | 工单主表，保存标题、描述、分类、优先级、状态、创建人、处理人、关注人和时间字段 |
 | `TicketComment` | 工单记录表，保存评论和处理记录 |
 | `TicketAttachment` | 工单附件表，保存上传文件路径、原始文件名、文件大小和上传人 |
 | `AuditLog` | 审计日志表，保存用户对业务资源的关键操作记录 |
@@ -96,11 +98,12 @@ docker compose down
 ## 当前业务规则
 
 - 工单列表默认分页，每页 10 条。
-- 普通用户只能看到自己创建或分配给自己的工单。
+- 普通用户只能看到自己创建、分配给自己或自己关注的工单。
 - 管理员可以查看和处理所有工单。
 - 创建人可以修改和删除自己的工单。
 - 处理人可以查看和处理分配给自己的工单，但不能删除工单。
 - 只有管理员或工单创建人可以分配、取消分配处理人。
+- 工单参与者可以关注或取消关注工单，关注人能收到评论和状态变化通知。
 - 工单参与者可以上传和查看附件，单个附件大小限制为 5MB。
 - 状态流转受后端限制，已关闭工单不能直接改回待处理。
 - 创建、更新、删除工单以及新增处理记录时，会自动写入审计日志。
@@ -120,7 +123,7 @@ curl "http://127.0.0.1:8000/api/tickets/?mine=assigned&overdue=true"
 | `category` | 按分类筛选，例如 `bug`、`feature`、`consult`、`other` |
 | `creator` | 按创建人用户 ID 筛选 |
 | `assignee` | 按处理人用户 ID 筛选 |
-| `mine` | 查询我的工单，支持 `created` 和 `assigned` |
+| `mine` | 查询我的工单，支持 `created`、`assigned` 和 `watched` |
 | `overdue` | 是否查询超时工单，支持 `true` 和 `false` |
 | `has_assignee` | 是否查询已分配工单，支持 `true` 和 `false` |
 | `search` | 按标题和描述搜索关键词 |
