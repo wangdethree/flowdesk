@@ -796,6 +796,136 @@ class TicketAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_creator_can_set_ticket_priority(self):
+        """工单创建人可以调整优先级，并记录审计日志和通知处理人。"""
+
+        ticket = Ticket.objects.create(
+            title='优先级调整工单',
+            description='创建人根据业务紧急程度调整优先级。',
+            creator=self.creator,
+            assignee=self.assignee,
+            priority=TicketPriority.MEDIUM,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-set-priority', args=[ticket.id]),
+            {'priority': TicketPriority.URGENT},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(ticket.priority, TicketPriority.URGENT)
+        self.assertEqual(response.data['priority'], TicketPriority.URGENT)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.creator,
+                action=AuditAction.UPDATE,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+                metadata={
+                    'old_priority': TicketPriority.MEDIUM,
+                    'new_priority': TicketPriority.URGENT,
+                },
+            ).exists()
+        )
+        notification = Notification.objects.get(
+            recipient=self.assignee,
+            notification_type=NotificationType.TICKET_PRIORITY_CHANGED,
+        )
+        self.assertEqual(notification.target_id, str(ticket.id))
+        self.assertEqual(notification.metadata['old_priority'], TicketPriority.MEDIUM)
+        self.assertEqual(notification.metadata['new_priority'], TicketPriority.URGENT)
+
+    def test_staff_can_set_ticket_priority(self):
+        """管理员可以调整任意可见工单的优先级，用于统一调度。"""
+
+        ticket = Ticket.objects.create(
+            title='管理员调整优先级工单',
+            description='管理员处理跨团队调度时可以提升优先级。',
+            creator=self.other_user,
+            priority=TicketPriority.LOW,
+        )
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.post(
+            reverse('ticket-set-priority', args=[ticket.id]),
+            {'priority': TicketPriority.HIGH},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(ticket.priority, TicketPriority.HIGH)
+
+    def test_assignee_cannot_set_ticket_priority(self):
+        """普通处理人不能自行调整优先级，避免绕过创建人或管理员排期。"""
+
+        ticket = Ticket.objects.create(
+            title='处理人不可调整优先级',
+            description='处理人只能推进工单，不能自己改排期级别。',
+            creator=self.creator,
+            assignee=self.assignee,
+            priority=TicketPriority.MEDIUM,
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.post(
+            reverse('ticket-set-priority', args=[ticket.id]),
+            {'priority': TicketPriority.URGENT},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ticket.priority, TicketPriority.MEDIUM)
+
+    def test_set_ticket_priority_with_invalid_choice_returns_bad_request(self):
+        """优先级枚举值非法时返回 400，避免接口写入脏数据。"""
+
+        ticket = Ticket.objects.create(
+            title='非法优先级测试工单',
+            description='验证 Serializer 会拦截不存在的优先级。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-set-priority', args=[ticket.id]),
+            {'priority': 'not-exists'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_priority_change_creates_notification_for_watcher(self):
+        """工单优先级变化后，关注人也会收到通知。"""
+
+        watcher = User.objects.create_user(username='watcher_priority', password='TestPass123')
+        ticket = Ticket.objects.create(
+            title='关注人优先级通知工单',
+            description='关注人需要知道优先级变更，便于跟进风险。',
+            creator=self.creator,
+            priority=TicketPriority.LOW,
+        )
+        ticket.watchers.add(watcher)
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-set-priority', args=[ticket.id]),
+            {'priority': TicketPriority.HIGH},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=watcher,
+                notification_type=NotificationType.TICKET_PRIORITY_CHANGED,
+            ).exists()
+        )
+
     def test_participant_can_remind_ticket_assignee(self):
         """工单参与者可以催办未完成且已分配的工单。"""
 
