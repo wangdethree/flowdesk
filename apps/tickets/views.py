@@ -23,9 +23,11 @@ from apps.tickets.serializers import (
     TicketReminderSerializer,
     TicketTagAssignmentSerializer,
     TicketTagSerializer,
+    TicketTimelineItemSerializer,
 )
 from apps.tickets.services import (
     assign_ticket,
+    build_ticket_timeline,
     close_ticket,
     notify_ticket_assigned,
     notify_ticket_commented,
@@ -200,6 +202,17 @@ from apps.tickets.services import (
             )
         ],
     ),
+    timeline=extend_schema(
+        responses=TicketTimelineItemSerializer(many=True),
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
     attachments=extend_schema(
         request=TicketAttachmentSerializer,
         responses=TicketAttachmentSerializer(many=True),
@@ -255,6 +268,8 @@ class TicketViewSet(viewsets.ModelViewSet):
             return TicketAttachmentSerializer
         if self.action == 'feedback':
             return TicketFeedbackSerializer
+        if self.action == 'timeline':
+            return TicketTimelineItemSerializer
         if self.action == 'audit_logs':
             return AuditLogSerializer
         if self.action == 'assign':
@@ -667,6 +682,24 @@ class TicketViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
 
         serializer = self.get_serializer(logs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def timeline(self, request, pk=None):
+        """查询工单时间线。
+
+        时间线复用工单详情权限，用户能看这张工单，才可以看它的完整动态。
+        """
+
+        ticket = self.get_object()
+        timeline_items = build_ticket_timeline(ticket)
+
+        page = self.paginate_queryset(timeline_items)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(timeline_items, many=True)
         return Response(serializer.data)
 
     @action(detail=True, methods=['get', 'post'])

@@ -1,5 +1,6 @@
 from django.utils import timezone
 
+from apps.audit.models import AuditLog
 from apps.notifications.models import NotificationType
 from apps.notifications.services import create_notification
 from apps.tickets.models import TicketFeedback, TicketStatus
@@ -79,6 +80,82 @@ def save_ticket_feedback(*, ticket, actor, rating, content=''):
         },
     )
     return feedback, created
+
+
+def build_ticket_timeline(ticket):
+    """构建工单时间线。
+
+    时间线是一个面向前端展示的聚合视图，不直接对应某张表。
+    这里把审计日志、评论、附件和评价统一成相同字段，再按时间倒序返回。
+    """
+
+    items = []
+
+    for log in AuditLog.for_target(ticket).select_related('actor'):
+        items.append(
+            {
+                'event_type': 'audit',
+                'object_id': log.id,
+                'title': log.description,
+                'content': log.get_action_display(),
+                'actor_id': log.actor_id,
+                'actor_username': log.actor.username if log.actor else None,
+                'created_at': log.created_at,
+                'metadata': log.metadata,
+            }
+        )
+
+    for comment in ticket.comments.select_related('author'):
+        items.append(
+            {
+                'event_type': 'comment',
+                'object_id': comment.id,
+                'title': comment.get_comment_type_display(),
+                'content': comment.content,
+                'actor_id': comment.author_id,
+                'actor_username': comment.author.username,
+                'created_at': comment.created_at,
+                'metadata': {'comment_type': comment.comment_type},
+            }
+        )
+
+    for attachment in ticket.attachments.select_related('uploaded_by'):
+        items.append(
+            {
+                'event_type': 'attachment',
+                'object_id': attachment.id,
+                'title': '上传附件',
+                'content': attachment.original_filename,
+                'actor_id': attachment.uploaded_by_id,
+                'actor_username': attachment.uploaded_by.username,
+                'created_at': attachment.created_at,
+                'metadata': {
+                    'size': attachment.size,
+                    'content_type': attachment.content_type,
+                },
+            }
+        )
+
+    try:
+        feedback = ticket.feedback
+    except TicketFeedback.DoesNotExist:
+        feedback = None
+
+    if feedback:
+        items.append(
+            {
+                'event_type': 'feedback',
+                'object_id': feedback.id,
+                'title': '提交工单评价',
+                'content': feedback.content,
+                'actor_id': feedback.created_by_id,
+                'actor_username': feedback.created_by.username,
+                'created_at': feedback.created_at,
+                'metadata': {'rating': feedback.rating},
+            }
+        )
+
+    return sorted(items, key=lambda item: item['created_at'], reverse=True)
 
 
 def notify_ticket_assigned(*, ticket, actor):

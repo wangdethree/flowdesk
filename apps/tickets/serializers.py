@@ -268,6 +268,22 @@ class TicketFeedbackSerializer(serializers.ModelSerializer):
         )
 
 
+class TicketTimelineItemSerializer(serializers.Serializer):
+    """工单时间线条目序列化器。
+
+    时间线不是单张数据库表，而是把评论、附件、评价和审计日志整理成统一展示结构。
+    """
+
+    event_type = serializers.CharField(read_only=True)
+    object_id = serializers.IntegerField(read_only=True)
+    title = serializers.CharField(read_only=True)
+    content = serializers.CharField(read_only=True, allow_blank=True)
+    actor_id = serializers.IntegerField(read_only=True, allow_null=True)
+    actor_username = serializers.CharField(read_only=True, allow_null=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    metadata = serializers.DictField(read_only=True)
+
+
 class TicketAssignmentSerializer(serializers.Serializer):
     """工单分配接口序列化器。
 
