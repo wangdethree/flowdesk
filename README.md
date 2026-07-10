@@ -79,6 +79,8 @@ docker compose down
 | DELETE | `/api/tickets/{id}/` | 删除工单 |
 | POST | `/api/tickets/{id}/assign/` | 分配或取消分配工单处理人 |
 | GET | `/api/tickets/{id}/audit-logs/` | 查询工单操作历史 |
+| GET | `/api/tickets/{id}/attachments/` | 查询工单附件列表 |
+| POST | `/api/tickets/{id}/attachments/` | 上传工单附件 |
 | GET | `/api/tickets/{id}/comments/` | 查询工单评论和处理记录 |
 | POST | `/api/tickets/{id}/comments/` | 新增工单评论或处理记录 |
 
@@ -88,6 +90,7 @@ docker compose down
 | --- | --- |
 | `Ticket` | 工单主表，保存标题、描述、分类、优先级、状态、创建人、处理人和时间字段 |
 | `TicketComment` | 工单记录表，保存评论和处理记录 |
+| `TicketAttachment` | 工单附件表，保存上传文件路径、原始文件名、文件大小和上传人 |
 | `AuditLog` | 审计日志表，保存用户对业务资源的关键操作记录 |
 
 ## 当前业务规则
@@ -98,6 +101,7 @@ docker compose down
 - 创建人可以修改和删除自己的工单。
 - 处理人可以查看和处理分配给自己的工单，但不能删除工单。
 - 只有管理员或工单创建人可以分配、取消分配处理人。
+- 工单参与者可以上传和查看附件，单个附件大小限制为 5MB。
 - 状态流转受后端限制，已关闭工单不能直接改回待处理。
 - 创建、更新、删除工单以及新增处理记录时，会自动写入审计日志。
 
