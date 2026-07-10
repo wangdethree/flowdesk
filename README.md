@@ -72,6 +72,11 @@ docker compose down
 | POST | `/api/users/token/refresh/` | 刷新 access token |
 | GET | `/api/users/me/` | 获取当前登录用户信息 |
 | GET | `/api/analytics/tickets/summary/` | 工单统计摘要 |
+| GET | `/api/notifications/` | 查询当前用户通知列表 |
+| GET | `/api/notifications/{id}/` | 查询通知详情 |
+| POST | `/api/notifications/{id}/mark-read/` | 标记单条通知为已读 |
+| POST | `/api/notifications/mark-all-read/` | 标记当前用户所有通知为已读 |
+| GET | `/api/notifications/unread-count/` | 查询当前用户未读通知数 |
 | GET | `/api/ticket-tags/` | 查询工单标签列表 |
 | POST | `/api/ticket-tags/` | 创建工单标签 |
 | GET | `/api/tickets/` | 查询工单列表 |
@@ -100,6 +105,7 @@ docker compose down
 | `TicketComment` | 工单记录表，保存评论和处理记录 |
 | `TicketAttachment` | 工单附件表，保存上传文件路径、原始文件名、文件大小和上传人 |
 | `AuditLog` | 审计日志表，保存用户对业务资源的关键操作记录 |
+| `Notification` | 站内通知表，保存通知接收人、通知类型、已读状态和业务目标 |
 
 ## 当前业务规则
 
@@ -116,6 +122,7 @@ docker compose down
 - 工单参与者可以上传和查看附件，单个附件大小限制为 5MB。
 - 状态流转受后端限制，已关闭工单不能直接改回待处理。
 - 创建、更新、删除工单以及新增处理记录时，会自动写入审计日志。
+- 通知是用户私有数据，普通用户只能查询和标记自己的通知。
 
 ## 工单列表查询参数
 
@@ -139,3 +146,18 @@ curl "http://127.0.0.1:8000/api/tickets/?mine=assigned&overdue=true"
 | `has_assignee` | 是否查询已分配工单，支持 `true` 和 `false` |
 | `search` | 按标题和描述搜索关键词 |
 | `ordering` | 排序字段，例如 `-created_at` |
+
+## 通知列表查询参数
+
+`GET /api/notifications/` 支持按已读状态、通知类型和关键词筛选，例如：
+
+```bash
+curl "http://127.0.0.1:8000/api/notifications/?is_read=false&notification_type=ticket_reminded"
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `is_read` | 是否查询已读通知，支持 `true` 和 `false` |
+| `notification_type` | 按通知类型筛选，例如 `ticket_assigned`、`ticket_commented`、`ticket_reminded` |
+| `search` | 按通知标题和内容搜索关键词 |
+| `ordering` | 排序字段，例如 `-created_at` 或 `read_at` |
