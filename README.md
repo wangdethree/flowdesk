@@ -72,12 +72,15 @@ docker compose down
 | POST | `/api/users/token/refresh/` | 刷新 access token |
 | GET | `/api/users/me/` | 获取当前登录用户信息 |
 | GET | `/api/analytics/tickets/summary/` | 工单统计摘要 |
+| GET | `/api/ticket-tags/` | 查询工单标签列表 |
+| POST | `/api/ticket-tags/` | 创建工单标签 |
 | GET | `/api/tickets/` | 查询工单列表 |
 | POST | `/api/tickets/` | 创建工单 |
 | GET | `/api/tickets/{id}/` | 查询工单详情 |
 | PUT/PATCH | `/api/tickets/{id}/` | 更新工单 |
 | DELETE | `/api/tickets/{id}/` | 删除工单 |
 | POST | `/api/tickets/{id}/assign/` | 分配或取消分配工单处理人 |
+| POST | `/api/tickets/{id}/set-tags/` | 设置工单标签 |
 | POST | `/api/tickets/{id}/watch/` | 关注工单 |
 | POST | `/api/tickets/{id}/unwatch/` | 取消关注工单 |
 | GET | `/api/tickets/{id}/audit-logs/` | 查询工单操作历史 |
@@ -90,7 +93,8 @@ docker compose down
 
 | 模型 | 说明 |
 | --- | --- |
-| `Ticket` | 工单主表，保存标题、描述、分类、优先级、状态、创建人、处理人、关注人和时间字段 |
+| `Ticket` | 工单主表，保存标题、描述、分类、优先级、状态、创建人、处理人、关注人、标签和时间字段 |
+| `TicketTag` | 工单标签表，用于给工单补充多个横向分类 |
 | `TicketComment` | 工单记录表，保存评论和处理记录 |
 | `TicketAttachment` | 工单附件表，保存上传文件路径、原始文件名、文件大小和上传人 |
 | `AuditLog` | 审计日志表，保存用户对业务资源的关键操作记录 |
@@ -103,6 +107,7 @@ docker compose down
 - 创建人可以修改和删除自己的工单。
 - 处理人可以查看和处理分配给自己的工单，但不能删除工单。
 - 只有管理员或工单创建人可以分配、取消分配处理人。
+- 只有管理员或工单创建人可以维护工单标签。
 - 工单参与者可以关注或取消关注工单，关注人能收到评论和状态变化通知。
 - 工单参与者可以上传和查看附件，单个附件大小限制为 5MB。
 - 状态流转受后端限制，已关闭工单不能直接改回待处理。
@@ -123,6 +128,8 @@ curl "http://127.0.0.1:8000/api/tickets/?mine=assigned&overdue=true"
 | `category` | 按分类筛选，例如 `bug`、`feature`、`consult`、`other` |
 | `creator` | 按创建人用户 ID 筛选 |
 | `assignee` | 按处理人用户 ID 筛选 |
+| `tag` | 按标签 ID 筛选 |
+| `tag_name` | 按标签名称筛选 |
 | `mine` | 查询我的工单，支持 `created`、`assigned` 和 `watched` |
 | `overdue` | 是否查询超时工单，支持 `true` 和 `false` |
 | `has_assignee` | 是否查询已分配工单，支持 `true` 和 `false` |
