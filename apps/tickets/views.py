@@ -33,7 +33,7 @@ from apps.tickets.services import (
             OpenApiParameter('category', OpenApiTypes.STR, OpenApiParameter.QUERY, description='按分类筛选'),
             OpenApiParameter('assignee', OpenApiTypes.INT, OpenApiParameter.QUERY, description='按处理人用户 ID 筛选'),
             OpenApiParameter('creator', OpenApiTypes.INT, OpenApiParameter.QUERY, description='按创建人用户 ID 筛选'),
-            OpenApiParameter('mine', OpenApiTypes.STR, OpenApiParameter.QUERY, description='筛选我的工单：created 或 assigned'),
+            OpenApiParameter('mine', OpenApiTypes.STR, OpenApiParameter.QUERY, description='筛选我的工单：created、assigned 或 watched'),
             OpenApiParameter('overdue', OpenApiTypes.BOOL, OpenApiParameter.QUERY, description='是否只看超时工单'),
             OpenApiParameter('has_assignee', OpenApiTypes.BOOL, OpenApiParameter.QUERY, description='是否只看已分配工单'),
             OpenApiParameter('search', OpenApiTypes.STR, OpenApiParameter.QUERY, description='按标题和描述搜索'),
@@ -82,6 +82,28 @@ from apps.tickets.services import (
     ),
     assign=extend_schema(
         request=TicketAssignmentSerializer,
+        responses=TicketSerializer,
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
+    watch=extend_schema(
+        responses=TicketSerializer,
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
+    unwatch=extend_schema(
         responses=TicketSerializer,
         parameters=[
             OpenApiParameter(
@@ -162,8 +184,8 @@ class TicketViewSet(viewsets.ModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             return Ticket.objects.none()
 
-        # select_related 会把 creator 和 assignee 一起查出来，减少后续访问用户名时的额外查询。
-        queryset = Ticket.objects.select_related('creator', 'assignee')
+        # select_related 会把 creator 和 assignee 一起查出来；prefetch_related 用于多对多关注人。
+        queryset = Ticket.objects.select_related('creator', 'assignee').prefetch_related('watchers')
         user = self.request.user
 
         # 普通用户只能看到“自己创建的工单”、“分配给自己的工单”或“自己关注的工单”。
@@ -268,6 +290,25 @@ class TicketViewSet(viewsets.ModelViewSet):
         notify_ticket_assigned(ticket=ticket, actor=request.user)
 
         # 分配完成后返回完整工单，前端可以直接刷新当前详情页。
+        return Response(TicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['post'])
+    def watch(self, request, pk=None):
+        """关注某张工单。
+
+        关注后，用户可以在 mine=watched 里看到这张工单，并收到后续动态通知。
+        """
+
+        ticket = self.get_object()
+        ticket.watchers.add(request.user)
+        return Response(TicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['post'])
+    def unwatch(self, request, pk=None):
+        """取消关注某张工单。"""
+
+        ticket = self.get_object()
+        ticket.watchers.remove(request.user)
         return Response(TicketSerializer(ticket).data)
 
     @action(detail=True, methods=['get'], url_path='audit-logs')

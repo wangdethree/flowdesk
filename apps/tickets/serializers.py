@@ -32,6 +32,7 @@ class TicketSerializer(serializers.ModelSerializer):
     # read_only=True 表示这个字段只用于返回给前端，创建/更新时不允许前端直接提交。
     creator_username = serializers.CharField(source='creator.username', read_only=True)
     assignee_username = serializers.CharField(source='assignee.username', read_only=True)
+    watcher_usernames = serializers.SerializerMethodField()
 
     # 处理人用用户 ID 提交即可，例如 {"assignee": 2}。
     # PrimaryKeyRelatedField 会检查这个 ID 对应的用户是否真的存在。
@@ -60,6 +61,8 @@ class TicketSerializer(serializers.ModelSerializer):
             'creator_username',
             'assignee',
             'assignee_username',
+            'watchers',
+            'watcher_usernames',
             'due_at',
             'resolved_at',
             'closed_at',
@@ -74,6 +77,8 @@ class TicketSerializer(serializers.ModelSerializer):
             'creator',
             'creator_username',
             'assignee_username',
+            'watchers',
+            'watcher_usernames',
             'resolved_at',
             'closed_at',
             'created_at',
@@ -81,6 +86,11 @@ class TicketSerializer(serializers.ModelSerializer):
             'is_finished',
             'is_overdue',
         )
+
+    def get_watcher_usernames(self, obj) -> list[str]:
+        """返回关注人用户名列表，方便接口调试和前端直接展示。"""
+
+        return [user.username for user in obj.watchers.all()]
 
     def validate_status(self, value):
         """校验状态流转是否合法。"""

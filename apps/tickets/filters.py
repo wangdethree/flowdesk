@@ -31,7 +31,7 @@ class TicketQueryParamSerializer(serializers.Serializer):
     creator = serializers.IntegerField(required=False, min_value=1)
     overdue = QueryBooleanField(required=False)
     has_assignee = QueryBooleanField(required=False)
-    mine = serializers.ChoiceField(choices=('created', 'assigned'), required=False)
+    mine = serializers.ChoiceField(choices=('created', 'assigned', 'watched'), required=False)
 
 
 class TicketFilterBackend(BaseFilterBackend):
@@ -65,6 +65,8 @@ class TicketFilterBackend(BaseFilterBackend):
             queryset = queryset.filter(creator=request.user)
         if filters.get('mine') == 'assigned':
             queryset = queryset.filter(assignee=request.user)
+        if filters.get('mine') == 'watched':
+            queryset = queryset.filter(watchers=request.user)
 
         # overdue=true 查询已超时且未完成的工单；overdue=false 查询未超时或已完成的工单。
         # 注意这里复用了模型里 is_overdue 的业务含义：有截止时间、已超过当前时间、并且还没结束。
