@@ -10,14 +10,14 @@ def get_visible_ticket_queryset(user):
     统计接口不能直接统计全表，否则普通用户会看到别人的业务数据。
     这里沿用工单列表接口的权限规则：
     - 管理员统计全部工单。
-    - 普通用户只统计自己创建或分配给自己的工单。
+    - 普通用户只统计自己创建、分配给自己或自己关注的工单。
     """
 
     queryset = Ticket.objects.all()
     if user.is_staff:
         return queryset
 
-    return queryset.filter(Q(creator=user) | Q(assignee=user))
+    return queryset.filter(Q(creator=user) | Q(assignee=user) | Q(watchers=user)).distinct()
 
 
 def build_choice_count_map(queryset, field_name, choices):

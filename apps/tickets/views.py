@@ -166,10 +166,12 @@ class TicketViewSet(viewsets.ModelViewSet):
         queryset = Ticket.objects.select_related('creator', 'assignee')
         user = self.request.user
 
-        # 普通用户只能看到“自己创建的工单”或“分配给自己的工单”。
+        # 普通用户只能看到“自己创建的工单”、“分配给自己的工单”或“自己关注的工单”。
         # Q 对象可以组合 OR 条件；这里的 | 就表示“或者”。
         if not user.is_staff:
-            queryset = queryset.filter(Q(creator=user) | Q(assignee=user))
+            queryset = queryset.filter(
+                Q(creator=user) | Q(assignee=user) | Q(watchers=user)
+            ).distinct()
 
         return queryset
 

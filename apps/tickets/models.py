@@ -84,6 +84,13 @@ class Ticket(models.Model):
         null=True,
         blank=True,
     )
+    # 关注人用于订阅工单动态。关注人不是处理人，但可以持续看到工单更新。
+    watchers = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name='watched_tickets',
+        verbose_name='关注人',
+        blank=True,
+    )
 
     due_at = models.DateTimeField('截止时间', null=True, blank=True)
     resolved_at = models.DateTimeField('解决时间', null=True, blank=True)
