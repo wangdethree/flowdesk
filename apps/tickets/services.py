@@ -61,6 +61,39 @@ def notify_ticket_reminded(*, ticket, actor, message=''):
     )
 
 
+def notify_ticket_priority_changed(*, ticket, actor, old_priority, new_priority):
+    """工单优先级变化后通知处理人和关注人。
+
+    创建人自己调整优先级时不需要再通知自己；使用字典去重，避免处理人同时也是关注人。
+    """
+
+    recipients = {}
+    if ticket.assignee_id and ticket.assignee_id != actor.id:
+        recipients[ticket.assignee_id] = ticket.assignee
+    for watcher in ticket.watchers.all():
+        if watcher.id != actor.id:
+            recipients[watcher.id] = watcher
+
+    notifications = []
+    for recipient in recipients.values():
+        notification = create_notification(
+            recipient=recipient,
+            notification_type=NotificationType.TICKET_PRIORITY_CHANGED,
+            title='工单优先级已调整',
+            message=f'工单「{ticket.title}」优先级已从 {old_priority} 调整为 {new_priority}。',
+            target=ticket,
+            metadata={
+                'ticket_id': ticket.id,
+                'actor_id': actor.id,
+                'old_priority': old_priority,
+                'new_priority': new_priority,
+            },
+        )
+        notifications.append(notification)
+
+    return notifications
+
+
 def notify_ticket_commented(*, ticket, comment, actor):
     """工单新增评论/处理记录后通知其他参与者。
 

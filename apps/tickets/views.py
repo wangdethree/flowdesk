@@ -15,6 +15,7 @@ from apps.tickets.serializers import (
     TicketAssignmentSerializer,
     TicketAttachmentSerializer,
     TicketCommentSerializer,
+    TicketPriorityUpdateSerializer,
     TicketSerializer,
     TicketReminderSerializer,
     TicketTagAssignmentSerializer,
@@ -24,6 +25,7 @@ from apps.tickets.services import (
     assign_ticket,
     notify_ticket_assigned,
     notify_ticket_commented,
+    notify_ticket_priority_changed,
     notify_ticket_reminded,
     notify_ticket_status_changed,
 )
@@ -100,6 +102,18 @@ from apps.tickets.services import (
     ),
     remind=extend_schema(
         request=TicketReminderSerializer,
+        responses=TicketSerializer,
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
+    set_priority=extend_schema(
+        request=TicketPriorityUpdateSerializer,
         responses=TicketSerializer,
         parameters=[
             OpenApiParameter(
@@ -202,6 +216,8 @@ class TicketViewSet(viewsets.ModelViewSet):
             return TicketAssignmentSerializer
         if self.action == 'remind':
             return TicketReminderSerializer
+        if self.action == 'set_priority':
+            return TicketPriorityUpdateSerializer
         if self.action == 'set_tags':
             return TicketTagAssignmentSerializer
         return TicketSerializer
@@ -364,6 +380,47 @@ class TicketViewSet(viewsets.ModelViewSet):
                 'message': message,
             },
         )
+        return Response(TicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['post'], url_path='set-priority')
+    def set_priority(self, request, pk=None):
+        """调整工单优先级。
+
+        优先级会影响处理顺序，所以第一版只允许管理员或工单创建人调整。
+        """
+
+        ticket = self.get_object()
+        if not request.user.is_staff and ticket.creator_id != request.user.id:
+            return Response(
+                {'detail': '只有管理员或工单创建人可以调整优先级。'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        old_priority = ticket.priority
+        new_priority = serializer.validated_data['priority']
+
+        if old_priority != new_priority:
+            ticket.priority = new_priority
+            ticket.save(update_fields=['priority', 'updated_at'])
+            create_audit_log(
+                actor=request.user,
+                action=AuditAction.UPDATE,
+                target=ticket,
+                description='调整工单优先级',
+                metadata={
+                    'old_priority': old_priority,
+                    'new_priority': new_priority,
+                },
+            )
+            notify_ticket_priority_changed(
+                ticket=ticket,
+                actor=request.user,
+                old_priority=old_priority,
+                new_priority=new_priority,
+            )
+
         return Response(TicketSerializer(ticket).data)
 
     @action(detail=True, methods=['post'], url_path='set-tags')

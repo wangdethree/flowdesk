@@ -2,7 +2,14 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.tickets.models import Ticket, TicketAttachment, TicketComment, TicketStatus, TicketTag
+from apps.tickets.models import (
+    Ticket,
+    TicketAttachment,
+    TicketComment,
+    TicketPriority,
+    TicketStatus,
+    TicketTag,
+)
 
 
 User = get_user_model()
@@ -267,3 +274,12 @@ class TicketReminderSerializer(serializers.Serializer):
     """
 
     message = serializers.CharField(required=False, allow_blank=True, max_length=200)
+
+
+class TicketPriorityUpdateSerializer(serializers.Serializer):
+    """工单优先级调整接口入参。
+
+    priority 使用模型枚举校验，避免前端传入不存在的优先级。
+    """
+
+    priority = serializers.ChoiceField(choices=TicketPriority.choices)
