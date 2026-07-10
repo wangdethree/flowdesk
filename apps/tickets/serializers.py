@@ -6,6 +6,7 @@ from apps.tickets.models import (
     Ticket,
     TicketAttachment,
     TicketComment,
+    TicketFeedback,
     TicketPriority,
     TicketStatus,
     TicketTag,
@@ -235,6 +236,36 @@ class TicketAttachmentSerializer(serializers.ModelSerializer):
         if file.size > MAX_ATTACHMENT_SIZE:
             raise serializers.ValidationError('附件大小不能超过 5MB。')
         return file
+
+
+class TicketFeedbackSerializer(serializers.ModelSerializer):
+    """工单评价序列化器。
+
+    前端只需要提交 rating 和 content；所属工单和评价人都由后端根据当前请求确定。
+    """
+
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = TicketFeedback
+        fields = (
+            'id',
+            'ticket',
+            'created_by',
+            'created_by_username',
+            'rating',
+            'content',
+            'created_at',
+            'updated_at',
+        )
+        read_only_fields = (
+            'id',
+            'ticket',
+            'created_by',
+            'created_by_username',
+            'created_at',
+            'updated_at',
+        )
 
 
 class TicketAssignmentSerializer(serializers.Serializer):

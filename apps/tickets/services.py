@@ -2,7 +2,7 @@ from django.utils import timezone
 
 from apps.notifications.models import NotificationType
 from apps.notifications.services import create_notification
-from apps.tickets.models import TicketStatus
+from apps.tickets.models import TicketFeedback, TicketStatus
 
 
 def assign_ticket(*, ticket, assignee):
@@ -61,6 +61,24 @@ def reopen_ticket(*, ticket, reason):
         ]
     )
     return old_status
+
+
+def save_ticket_feedback(*, ticket, actor, rating, content=''):
+    """创建或更新工单评价。
+
+    评价和工单是一对一关系，所以重复评价时更新原评价，而不是新增多条记录。
+    返回 created 是为了 View 层写审计日志时区分“首次评价”和“修改评价”。
+    """
+
+    feedback, created = TicketFeedback.objects.update_or_create(
+        ticket=ticket,
+        defaults={
+            'created_by': actor,
+            'rating': rating,
+            'content': content,
+        },
+    )
+    return feedback, created
 
 
 def notify_ticket_assigned(*, ticket, actor):
@@ -133,6 +151,30 @@ def notify_ticket_priority_changed(*, ticket, actor, old_priority, new_priority)
         notifications.append(notification)
 
     return notifications
+
+
+def notify_ticket_feedback_submitted(*, ticket, feedback, actor):
+    """工单收到评价后通知处理人。
+
+    评价主要反馈给处理人；如果没有处理人，或者创建人评价的是自己处理的工单，就不重复通知。
+    """
+
+    if ticket.assignee is None or ticket.assignee_id == actor.id:
+        return None
+
+    return create_notification(
+        recipient=ticket.assignee,
+        notification_type=NotificationType.TICKET_FEEDBACK_SUBMITTED,
+        title='工单收到新的评价',
+        message=f'工单「{ticket.title}」收到 {feedback.rating} 星评价。',
+        target=ticket,
+        metadata={
+            'ticket_id': ticket.id,
+            'feedback_id': feedback.id,
+            'actor_id': actor.id,
+            'rating': feedback.rating,
+        },
+    )
 
 
 def notify_ticket_commented(*, ticket, comment, actor):

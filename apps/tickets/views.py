@@ -9,13 +9,14 @@ from apps.audit.models import AuditAction, AuditLog
 from apps.audit.serializers import AuditLogSerializer
 from apps.audit.services import create_audit_log
 from apps.tickets.filters import TicketFilterBackend
-from apps.tickets.models import Ticket, TicketStatus, TicketTag
+from apps.tickets.models import Ticket, TicketFeedback, TicketStatus, TicketTag
 from apps.tickets.permissions import IsTicketParticipantOrStaff
 from apps.tickets.serializers import (
     TicketAssignmentSerializer,
     TicketAttachmentSerializer,
     TicketCloseSerializer,
     TicketCommentSerializer,
+    TicketFeedbackSerializer,
     TicketPriorityUpdateSerializer,
     TicketReopenSerializer,
     TicketSerializer,
@@ -28,10 +29,12 @@ from apps.tickets.services import (
     close_ticket,
     notify_ticket_assigned,
     notify_ticket_commented,
+    notify_ticket_feedback_submitted,
     notify_ticket_priority_changed,
     notify_ticket_reminded,
     notify_ticket_status_changed,
     reopen_ticket,
+    save_ticket_feedback,
 )
 
 
@@ -209,6 +212,18 @@ from apps.tickets.services import (
             )
         ],
     ),
+    feedback=extend_schema(
+        request=TicketFeedbackSerializer,
+        responses=TicketFeedbackSerializer,
+        parameters=[
+            OpenApiParameter(
+                name='id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='工单 ID',
+            )
+        ],
+    ),
 )
 class TicketViewSet(viewsets.ModelViewSet):
     """工单 CRUD 接口。
@@ -238,6 +253,8 @@ class TicketViewSet(viewsets.ModelViewSet):
             return TicketCommentSerializer
         if self.action == 'attachments':
             return TicketAttachmentSerializer
+        if self.action == 'feedback':
+            return TicketFeedbackSerializer
         if self.action == 'audit_logs':
             return AuditLogSerializer
         if self.action == 'assign':
@@ -413,6 +430,60 @@ class TicketViewSet(viewsets.ModelViewSet):
             },
         )
         return Response(TicketSerializer(ticket).data)
+
+    @action(detail=True, methods=['get', 'post'])
+    def feedback(self, request, pk=None):
+        """查询或提交工单评价。
+
+        GET 用于查看评价；POST 用于创建或更新评价。
+        第一版规定只有工单创建人可以评价，并且只允许评价已关闭工单。
+        """
+
+        ticket = self.get_object()
+
+        if request.method == 'GET':
+            try:
+                feedback = ticket.feedback
+            except TicketFeedback.DoesNotExist:
+                return Response(
+                    {'detail': '工单还没有评价。'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            return Response(TicketFeedbackSerializer(feedback).data)
+
+        if ticket.creator_id != request.user.id:
+            return Response(
+                {'detail': '只有工单创建人可以评价工单。'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if ticket.status != TicketStatus.CLOSED:
+            return Response(
+                {'detail': '只有已关闭的工单可以评价。'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        feedback, created = save_ticket_feedback(
+            ticket=ticket,
+            actor=request.user,
+            rating=serializer.validated_data['rating'],
+            content=serializer.validated_data.get('content', ''),
+        )
+        create_audit_log(
+            actor=request.user,
+            action=AuditAction.FEEDBACK,
+            target=ticket,
+            description='评价工单',
+            metadata={
+                'feedback_id': feedback.id,
+                'rating': feedback.rating,
+                'content': feedback.content,
+                'created': created,
+            },
+        )
+        notify_ticket_feedback_submitted(ticket=ticket, feedback=feedback, actor=request.user)
+        return Response(TicketFeedbackSerializer(feedback).data)
 
     @action(detail=True, methods=['post'])
     def close(self, request, pk=None):
