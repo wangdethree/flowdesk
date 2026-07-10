@@ -9,7 +9,7 @@ from apps.audit.models import AuditAction, AuditLog
 from apps.audit.serializers import AuditLogSerializer
 from apps.audit.services import create_audit_log
 from apps.tickets.filters import TicketFilterBackend
-from apps.tickets.models import Ticket, TicketTag
+from apps.tickets.models import Ticket, TicketStatus, TicketTag
 from apps.tickets.permissions import IsTicketParticipantOrStaff
 from apps.tickets.serializers import (
     TicketAssignmentSerializer,
