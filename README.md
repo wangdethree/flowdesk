@@ -71,12 +71,15 @@ docker compose down
 | POST | `/api/users/login/` | JWT 登录 |
 | POST | `/api/users/token/refresh/` | 刷新 access token |
 | GET | `/api/users/me/` | 获取当前登录用户信息 |
+| PATCH | `/api/users/me/` | 更新当前登录用户资料 |
+| POST | `/api/users/change-password/` | 当前登录用户修改密码 |
 | GET | `/api/analytics/tickets/summary/` | 工单统计摘要，包含数量、分布和评价指标 |
 | GET | `/api/notifications/` | 查询当前用户通知列表 |
 | GET | `/api/notifications/{id}/` | 查询通知详情 |
 | POST | `/api/notifications/{id}/mark-read/` | 标记单条通知为已读 |
 | POST | `/api/notifications/mark-all-read/` | 标记当前用户所有通知为已读 |
 | GET | `/api/notifications/unread-count/` | 查询当前用户未读通知数 |
+| DELETE | `/api/notifications/clear-read/` | 清理当前用户所有已读通知 |
 | GET | `/api/ticket-tags/` | 查询工单标签列表 |
 | POST | `/api/ticket-tags/` | 创建工单标签 |
 | GET | `/api/tickets/` | 查询工单列表 |
@@ -99,6 +102,7 @@ docker compose down
 | POST | `/api/tickets/{id}/comments/` | 新增工单评论或处理记录 |
 | GET | `/api/tickets/{id}/feedback/` | 查询工单评价 |
 | POST | `/api/tickets/{id}/feedback/` | 创建或更新工单评价 |
+| GET | `/api/tickets/{id}/timeline/` | 查询工单时间线 |
 
 ## 当前数据模型
 
@@ -131,7 +135,10 @@ docker compose down
 - 工单评价评分范围为 1 到 5，评价后会写入审计日志并通知处理人。
 - 工单统计摘要会按当前用户可见范围计算评价数量、平均分、满意率和评分分布。
 - 创建、更新、删除工单以及新增处理记录时，会自动写入审计日志。
+- 工单时间线会聚合审计日志、评论、附件和评价，便于前端展示完整动态。
 - 通知是用户私有数据，普通用户只能查询和标记自己的通知。
+- 清理已读通知只删除当前用户的已读通知，不影响未读通知和其他用户通知。
+- 用户可以更新自己的邮箱、名和姓；修改密码必须提供正确旧密码。
 
 ## 工单列表查询参数
 
