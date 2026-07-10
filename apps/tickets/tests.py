@@ -831,6 +831,70 @@ class TicketAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(ticket.status, TicketStatus.RESOLVED)
 
+    def test_timeline_contains_ticket_events(self):
+        """工单时间线会聚合审计日志、评论、附件和评价。"""
+
+        ticket = Ticket.objects.create(
+            title='时间线测试工单',
+            description='验证多种动态可以聚合展示。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.CLOSED,
+            closed_at=timezone.now(),
+        )
+        AuditLog.objects.create(
+            actor=self.creator,
+            action=AuditAction.CREATE,
+            target_type='Ticket',
+            target_id=str(ticket.id),
+            description='创建工单',
+            metadata={'title': ticket.title},
+        )
+        TicketComment.objects.create(
+            ticket=ticket,
+            author=self.assignee,
+            content='已经处理完成。',
+            comment_type=TicketComment.CommentType.HANDLING,
+        )
+        TicketAttachment.objects.create(
+            ticket=ticket,
+            uploaded_by=self.assignee,
+            file=SimpleUploadedFile('result.txt', b'ok', content_type='text/plain'),
+            original_filename='result.txt',
+            content_type='text/plain',
+            size=2,
+        )
+        TicketFeedback.objects.create(
+            ticket=ticket,
+            created_by=self.creator,
+            rating=5,
+            content='处理满意。',
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.get(reverse('ticket-timeline', args=[ticket.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = self.get_results(response)
+        event_types = {item['event_type'] for item in results}
+        self.assertEqual(event_types, {'audit', 'comment', 'attachment', 'feedback'})
+        feedback_item = next(item for item in results if item['event_type'] == 'feedback')
+        self.assertEqual(feedback_item['metadata']['rating'], 5)
+
+    def test_unrelated_user_cannot_view_ticket_timeline(self):
+        """无关用户不能查看自己不可见工单的时间线。"""
+
+        ticket = Ticket.objects.create(
+            title='不可见时间线工单',
+            description='无关用户不能查看。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.other_user)
+
+        response = self.client.get(reverse('ticket-timeline', args=[ticket.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_creator_can_submit_feedback_for_closed_ticket(self):
         """工单创建人可以评价已关闭工单，并通知处理人。"""
 
