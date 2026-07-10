@@ -7,7 +7,11 @@ from rest_framework.response import Response
 from apps.notifications.filters import NotificationFilterBackend
 from apps.notifications.models import Notification
 from apps.notifications.serializers import NotificationSerializer
-from apps.notifications.services import get_unread_notification_count, mark_all_notifications_as_read
+from apps.notifications.services import (
+    delete_read_notifications,
+    get_unread_notification_count,
+    mark_all_notifications_as_read,
+)
 
 
 @extend_schema_view(
@@ -68,3 +72,13 @@ class NotificationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         """查询当前用户未读通知数量。"""
 
         return Response({'unread_count': get_unread_notification_count(request.user)})
+
+    @action(detail=False, methods=['delete'], url_path='clear-read')
+    def clear_read(self, request):
+        """清理当前用户所有已读通知。"""
+
+        deleted_count = delete_read_notifications(request.user)
+        return Response(
+            {'deleted_count': deleted_count},
+            status=status.HTTP_200_OK,
+        )

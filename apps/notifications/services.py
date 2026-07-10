@@ -46,3 +46,13 @@ def get_unread_notification_count(user):
     """统计当前用户未读通知数量。"""
 
     return Notification.objects.filter(recipient=user, is_read=False).count()
+
+
+def delete_read_notifications(user):
+    """删除当前用户所有已读通知。
+
+    这里只删除已读通知，保留未读通知，避免用户误清理掉仍需要处理的提醒。
+    """
+
+    deleted_count, _detail = Notification.objects.filter(recipient=user, is_read=True).delete()
+    return deleted_count
