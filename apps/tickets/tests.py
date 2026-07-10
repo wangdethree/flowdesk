@@ -657,6 +657,179 @@ class TicketAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_patch_cannot_close_ticket_directly(self):
+        """普通更新接口不能直接关闭工单，避免绕过关闭原因。"""
+
+        ticket = Ticket.objects.create(
+            title='不能直接关闭工单',
+            description='关闭工单必须走 close 接口填写原因。',
+            creator=self.creator,
+            status=TicketStatus.RESOLVED,
+            resolved_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.patch(
+            reverse('ticket-detail', args=[ticket.id]),
+            {'status': TicketStatus.CLOSED},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ticket.status, TicketStatus.RESOLVED)
+        self.assertEqual(ticket.close_reason, '')
+
+    def test_creator_can_close_ticket_with_reason(self):
+        """创建人可以关闭工单，关闭时会保存原因、写审计日志并通知处理人。"""
+
+        ticket = Ticket.objects.create(
+            title='关闭测试工单',
+            description='验证关闭动作必须记录原因。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.RESOLVED,
+            resolved_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-close', args=[ticket.id]),
+            {'reason': '用户确认问题已经解决，可以关闭。'},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(ticket.status, TicketStatus.CLOSED)
+        self.assertEqual(ticket.close_reason, '用户确认问题已经解决，可以关闭。')
+        self.assertIsNotNone(ticket.closed_at)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.creator,
+                action=AuditAction.STATUS_CHANGE,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+                metadata={
+                    'old_status': TicketStatus.RESOLVED,
+                    'new_status': TicketStatus.CLOSED,
+                    'reason': '用户确认问题已经解决，可以关闭。',
+                },
+            ).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.assignee,
+                notification_type=NotificationType.TICKET_STATUS_CHANGED,
+            ).exists()
+        )
+
+    def test_close_ticket_requires_reason(self):
+        """关闭原因不能为空，避免终态工单没有复盘上下文。"""
+
+        ticket = Ticket.objects.create(
+            title='关闭原因必填工单',
+            description='没有原因不能关闭。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-close', args=[ticket.id]),
+            {'reason': ''},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ticket.status, TicketStatus.OPEN)
+
+    def test_assignee_cannot_close_ticket(self):
+        """普通处理人不能关闭工单，关闭终态交给创建人或管理员确认。"""
+
+        ticket = Ticket.objects.create(
+            title='处理人不可关闭工单',
+            description='处理人可以解决问题，但最终关闭由创建人确认。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.RESOLVED,
+            resolved_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.post(
+            reverse('ticket-close', args=[ticket.id]),
+            {'reason': '处理人尝试关闭。'},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ticket.status, TicketStatus.RESOLVED)
+
+    def test_creator_can_reopen_closed_ticket_with_reason(self):
+        """创建人可以重开已关闭工单，并保存重开原因。"""
+
+        ticket = Ticket.objects.create(
+            title='重开测试工单',
+            description='验证已关闭工单可以因问题复现而重开。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.CLOSED,
+            resolved_at=timezone.now(),
+            closed_at=timezone.now(),
+            close_reason='用户曾确认问题解决。',
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-reopen', args=[ticket.id]),
+            {'reason': '用户反馈问题再次出现，需要重新处理。'},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(ticket.status, TicketStatus.OPEN)
+        self.assertIsNone(ticket.resolved_at)
+        self.assertIsNone(ticket.closed_at)
+        self.assertEqual(ticket.reopen_reason, '用户反馈问题再次出现，需要重新处理。')
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.creator,
+                action=AuditAction.STATUS_CHANGE,
+                target_type='Ticket',
+                target_id=str(ticket.id),
+                metadata={
+                    'old_status': TicketStatus.CLOSED,
+                    'new_status': TicketStatus.OPEN,
+                    'reason': '用户反馈问题再次出现，需要重新处理。',
+                },
+            ).exists()
+        )
+
+    def test_cannot_reopen_unclosed_ticket(self):
+        """只有已关闭工单可以重开。"""
+
+        ticket = Ticket.objects.create(
+            title='未关闭不可重开',
+            description='还没关闭的工单不应该执行重开动作。',
+            creator=self.creator,
+            status=TicketStatus.RESOLVED,
+            resolved_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-reopen', args=[ticket.id]),
+            {'reason': '尝试重开未关闭工单。'},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ticket.status, TicketStatus.RESOLVED)
+
     def test_creator_can_assign_ticket(self):
         """工单创建人可以把工单分配给处理人。"""
 
