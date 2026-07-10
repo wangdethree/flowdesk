@@ -3,7 +3,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.tickets.models import Ticket, TicketPriority, TicketStatus
+from apps.tickets.models import Ticket, TicketFeedback, TicketPriority, TicketStatus
 
 
 User = get_user_model()
@@ -57,3 +57,27 @@ class TicketSummaryAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['total'], 2)
+
+    def test_summary_response_contains_feedback_metrics(self):
+        """统计接口响应包含评价摘要字段。"""
+
+        ticket = Ticket.objects.create(
+            title='评价统计接口工单',
+            description='验证接口响应里包含 feedback。',
+            creator=self.user,
+            status=TicketStatus.CLOSED,
+        )
+        TicketFeedback.objects.create(
+            ticket=ticket,
+            created_by=self.user,
+            rating=5,
+            content='满意。',
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(reverse('ticket-summary'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['feedback']['feedback_count'], 1)
+        self.assertEqual(response.data['feedback']['average_rating'], 5)
+        self.assertEqual(response.data['feedback']['satisfaction_rate'], 1)
