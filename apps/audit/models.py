@@ -15,6 +15,7 @@ class AuditAction(models.TextChoices):
     STATUS_CHANGE = 'status_change', '状态流转'
     ASSIGN = 'assign', '分配处理人'
     REMIND = 'remind', '催办'
+    FEEDBACK = 'feedback', '评价'
 
 
 class AuditLog(models.Model):

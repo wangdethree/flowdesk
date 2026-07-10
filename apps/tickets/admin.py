@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.tickets.models import Ticket, TicketAttachment, TicketComment, TicketTag
+from apps.tickets.models import Ticket, TicketAttachment, TicketComment, TicketFeedback, TicketTag
 
 
 @admin.register(Ticket)
@@ -48,6 +48,16 @@ class TicketAttachmentAdmin(admin.ModelAdmin):
     list_display = ('id', 'ticket', 'uploaded_by', 'original_filename', 'size', 'created_at')
     list_filter = ('content_type', 'created_at')
     search_fields = ('ticket__title', 'uploaded_by__username', 'original_filename')
+    ordering = ('-created_at',)
+
+
+@admin.register(TicketFeedback)
+class TicketFeedbackAdmin(admin.ModelAdmin):
+    """工单评价后台管理配置，便于查看评分和用户反馈。"""
+
+    list_display = ('id', 'ticket', 'created_by', 'rating', 'created_at')
+    list_filter = ('rating', 'created_at')
+    search_fields = ('ticket__title', 'created_by__username', 'content')
     ordering = ('-created_at',)
 
 

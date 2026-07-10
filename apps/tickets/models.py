@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -202,6 +203,46 @@ class TicketComment(models.Model):
 
     def __str__(self):
         return f'{self.get_comment_type_display()} - {self.ticket_id}'
+
+
+class TicketFeedback(models.Model):
+    """工单评价表。
+
+    一张工单只保留一份最终评价，用来衡量处理结果和服务质量。
+    评价和评论不同：评论是过程沟通，评价是关闭后的结果反馈。
+    """
+
+    ticket = models.OneToOneField(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name='feedback',
+        verbose_name='所属工单',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='ticket_feedbacks',
+        verbose_name='评价人',
+    )
+    rating = models.PositiveSmallIntegerField(
+        '评分',
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+    )
+    content = models.TextField('评价内容', blank=True)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '工单评价'
+        verbose_name_plural = '工单评价'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['created_by', '-created_at']),
+            models.Index(fields=['rating', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.ticket_id} - {self.rating}星'
 
 
 class TicketAttachment(models.Model):
