@@ -188,6 +188,25 @@ class TicketAPITests(APITestCase):
         returned_ids = {item['id'] for item in self.get_results(response)}
         self.assertEqual(returned_ids, {own_ticket.id, assigned_ticket.id})
 
+    def test_watcher_can_list_and_retrieve_watched_ticket(self):
+        """关注人可以看到自己关注的工单。"""
+
+        watched_ticket = Ticket.objects.create(
+            title='我关注的工单',
+            description='关注后应该进入我的可见范围。',
+            creator=self.creator,
+        )
+        watched_ticket.watchers.add(self.other_user)
+        self.client.force_authenticate(user=self.other_user)
+
+        list_response = self.client.get(reverse('ticket-list'))
+        detail_response = self.client.get(reverse('ticket-detail', args=[watched_ticket.id]))
+
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        returned_ids = {item['id'] for item in self.get_results(list_response)}
+        self.assertEqual(returned_ids, {watched_ticket.id})
+        self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+
     def test_staff_can_list_all_tickets(self):
         Ticket.objects.create(title='工单一', description='管理员可见。', creator=self.creator)
         Ticket.objects.create(title='工单二', description='管理员可见。', creator=self.other_user)
@@ -343,6 +362,28 @@ class TicketAPITests(APITestCase):
         returned_ids = {item['id'] for item in self.get_results(response)}
         self.assertEqual(returned_ids, {assigned_to_me.id})
 
+    def test_filter_tickets_by_mine_watched(self):
+        """mine=watched 只返回当前用户关注的工单。"""
+
+        watched_ticket = Ticket.objects.create(
+            title='关注的工单',
+            description='用于验证 mine=watched。',
+            creator=self.creator,
+        )
+        watched_ticket.watchers.add(self.other_user)
+        Ticket.objects.create(
+            title='未关注工单',
+            description='这张工单不应该出现在 mine=watched 结果里。',
+            creator=self.other_user,
+        )
+        self.client.force_authenticate(user=self.other_user)
+
+        response = self.client.get(reverse('ticket-list'), {'mine': 'watched'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {item['id'] for item in self.get_results(response)}
+        self.assertEqual(returned_ids, {watched_ticket.id})
+
     def test_filter_tickets_by_overdue(self):
         """overdue=true 只返回超过截止时间且仍未完成的工单。"""
 
@@ -466,6 +507,34 @@ class TicketAPITests(APITestCase):
         )
         self.assertEqual(notification.metadata['old_status'], TicketStatus.IN_PROGRESS)
         self.assertEqual(notification.metadata['new_status'], TicketStatus.RESOLVED)
+
+    def test_status_change_creates_notification_for_watcher(self):
+        """工单状态变化后，关注人会收到通知。"""
+
+        watcher = User.objects.create_user(username='watcher_status', password='TestPass123')
+        ticket = Ticket.objects.create(
+            title='关注人状态通知工单',
+            description='验证状态变化也会通知关注人。',
+            creator=self.creator,
+            assignee=self.assignee,
+            status=TicketStatus.IN_PROGRESS,
+        )
+        ticket.watchers.add(watcher)
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.patch(
+            reverse('ticket-detail', args=[ticket.id]),
+            {'status': TicketStatus.RESOLVED},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=watcher,
+                notification_type=NotificationType.TICKET_STATUS_CHANGED,
+            ).exists()
+        )
 
     def test_invalid_status_transition_returns_bad_request(self):
         ticket = Ticket.objects.create(
@@ -623,6 +692,27 @@ class TicketAPITests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_participant_can_watch_and_unwatch_ticket(self):
+        """工单参与者可以关注和取消关注工单。"""
+
+        ticket = Ticket.objects.create(
+            title='关注接口工单',
+            description='验证关注和取消关注。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        watch_response = self.client.post(reverse('ticket-watch', args=[ticket.id]))
+        unwatch_response = self.client.post(reverse('ticket-unwatch', args=[ticket.id]))
+        ticket.refresh_from_db()
+
+        self.assertEqual(watch_response.status_code, status.HTTP_200_OK)
+        self.assertIn(self.assignee.id, watch_response.data['watchers'])
+        self.assertIn(self.assignee.username, watch_response.data['watcher_usernames'])
+        self.assertEqual(unwatch_response.status_code, status.HTTP_200_OK)
+        self.assertNotIn(self.assignee, ticket.watchers.all())
 
     def test_participant_can_list_ticket_audit_logs(self):
         """工单参与者可以查看这张工单的操作历史。"""
@@ -881,6 +971,36 @@ class TicketAPITests(APITestCase):
         )
         self.assertEqual(notification.target_id, str(ticket.id))
         self.assertEqual(notification.metadata['comment_id'], response.data['id'])
+
+    def test_comment_creates_notification_for_watcher(self):
+        """工单新增评论后，关注人会收到通知。"""
+
+        watcher = User.objects.create_user(username='watcher_comment', password='TestPass123')
+        ticket = Ticket.objects.create(
+            title='关注人评论通知工单',
+            description='验证评论会通知关注人。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        ticket.watchers.add(watcher)
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.post(
+            reverse('ticket-comments', args=[ticket.id]),
+            {
+                'content': '这里新增一条给关注人的评论。',
+                'comment_type': TicketComment.CommentType.COMMENT,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=watcher,
+                notification_type=NotificationType.TICKET_COMMENTED,
+            ).exists()
+        )
 
     def test_unrelated_user_cannot_create_ticket_comment(self):
         ticket = Ticket.objects.create(
