@@ -18,6 +18,7 @@ from apps.tickets.models import (
     TicketComment,
     TicketPriority,
     TicketStatus,
+    TicketTag,
 )
 
 
@@ -100,6 +101,12 @@ class TicketModelTests(TestCase):
         self.assertEqual(comment.author, self.assignee)
         self.assertEqual(ticket.comments.count(), 1)
         self.assertEqual(str(comment), f'处理记录 - {ticket.id}')
+
+    def test_create_ticket_tag(self):
+        tag = TicketTag.objects.create(name='线上故障', color='#ef4444')
+
+        self.assertEqual(str(tag), '线上故障')
+        self.assertEqual(tag.color, '#ef4444')
 
 
 class TicketAPITests(APITestCase):
@@ -317,6 +324,102 @@ class TicketAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(self.get_results(response)[0]['title'], '网络故障工单')
+
+    def test_create_and_list_ticket_tags(self):
+        """登录用户可以创建和查询工单标签。"""
+
+        self.client.force_authenticate(user=self.creator)
+
+        create_response = self.client.post(
+            reverse('ticket-tag-list'),
+            {'name': '线上故障', 'color': '#ef4444'},
+            format='json',
+        )
+        list_response = self.client.get(reverse('ticket-tag-list'), {'search': '线上'})
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_response.data['name'], '线上故障')
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(list_response.data['count'], 1)
+        self.assertEqual(list_response.data['results'][0]['color'], '#ef4444')
+
+    def test_creator_can_set_ticket_tags(self):
+        """工单创建人可以给自己的工单设置标签。"""
+
+        bug_tag = TicketTag.objects.create(name='线上故障', color='#ef4444')
+        vip_tag = TicketTag.objects.create(name='VIP客户', color='#f59e0b')
+        ticket = Ticket.objects.create(
+            title='设置标签工单',
+            description='验证创建人可以维护标签。',
+            creator=self.creator,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(
+            reverse('ticket-set-tags', args=[ticket.id]),
+            {'tags': [bug_tag.id, vip_tag.id]},
+            format='json',
+        )
+        ticket.refresh_from_db()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(set(response.data['tags']), {bug_tag.id, vip_tag.id})
+        self.assertEqual(set(response.data['tag_names']), {'线上故障', 'VIP客户'})
+        self.assertEqual(set(ticket.tags.values_list('id', flat=True)), {bug_tag.id, vip_tag.id})
+
+    def test_non_creator_cannot_set_ticket_tags(self):
+        """非创建人不能维护别人工单的标签。"""
+
+        tag = TicketTag.objects.create(name='支付模块')
+        ticket = Ticket.objects.create(
+            title='别人创建的工单',
+            description='处理人不能随便改标签。',
+            creator=self.creator,
+            assignee=self.assignee,
+        )
+        self.client.force_authenticate(user=self.assignee)
+
+        response = self.client.post(
+            reverse('ticket-set-tags', args=[ticket.id]),
+            {'tags': [tag.id]},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ticket.tags.count(), 0)
+
+    def test_filter_tickets_by_tag(self):
+        """工单列表支持按标签 ID 和标签名称筛选。"""
+
+        bug_tag = TicketTag.objects.create(name='线上故障')
+        vip_tag = TicketTag.objects.create(name='VIP客户')
+        bug_ticket = Ticket.objects.create(
+            title='线上故障工单',
+            description='带有线上故障标签。',
+            creator=self.creator,
+        )
+        bug_ticket.tags.add(bug_tag)
+        vip_ticket = Ticket.objects.create(
+            title='VIP 工单',
+            description='带有 VIP 标签。',
+            creator=self.creator,
+        )
+        vip_ticket.tags.add(vip_tag)
+        self.client.force_authenticate(user=self.creator)
+
+        by_id_response = self.client.get(reverse('ticket-list'), {'tag': bug_tag.id})
+        by_name_response = self.client.get(reverse('ticket-list'), {'tag_name': 'VIP客户'})
+
+        self.assertEqual(by_id_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            {item['id'] for item in self.get_results(by_id_response)},
+            {bug_ticket.id},
+        )
+        self.assertEqual(by_name_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            {item['id'] for item in self.get_results(by_name_response)},
+            {vip_ticket.id},
+        )
 
     def test_filter_tickets_by_mine_created(self):
         """mine=created 只返回当前用户自己创建的工单。"""
