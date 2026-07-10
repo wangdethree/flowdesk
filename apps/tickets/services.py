@@ -44,8 +44,8 @@ def notify_ticket_assigned(*, ticket, actor):
 def notify_ticket_commented(*, ticket, comment, actor):
     """工单新增评论/处理记录后通知其他参与者。
 
-    创建人和处理人都属于工单参与者，但评论作者本人不需要收到自己的通知。
-    使用字典按用户 ID 去重，避免创建人和处理人是同一个人时重复发通知。
+    创建人、处理人和关注人都属于工单参与者，但评论作者本人不需要收到自己的通知。
+    使用字典按用户 ID 去重，避免同一个人既是处理人又是关注人时重复发通知。
     """
 
     recipients = {}
@@ -53,6 +53,9 @@ def notify_ticket_commented(*, ticket, comment, actor):
         recipients[ticket.creator_id] = ticket.creator
     if ticket.assignee_id and ticket.assignee_id != actor.id:
         recipients[ticket.assignee_id] = ticket.assignee
+    for watcher in ticket.watchers.all():
+        if watcher.id != actor.id:
+            recipients[watcher.id] = watcher
 
     notifications = []
     for recipient in recipients.values():
@@ -75,13 +78,16 @@ def notify_ticket_commented(*, ticket, comment, actor):
 
 
 def notify_ticket_status_changed(*, ticket, actor, old_status, new_status):
-    """工单状态变化后通知其他参与者。"""
+    """工单状态变化后通知其他参与者和关注人。"""
 
     recipients = {}
     if ticket.creator_id != actor.id:
         recipients[ticket.creator_id] = ticket.creator
     if ticket.assignee_id and ticket.assignee_id != actor.id:
         recipients[ticket.assignee_id] = ticket.assignee
+    for watcher in ticket.watchers.all():
+        if watcher.id != actor.id:
+            recipients[watcher.id] = watcher
 
     notifications = []
     for recipient in recipients.values():
