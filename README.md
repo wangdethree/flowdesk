@@ -71,7 +71,7 @@ docker compose down
 | POST | `/api/users/login/` | JWT 登录 |
 | POST | `/api/users/token/refresh/` | 刷新 access token |
 | GET | `/api/users/me/` | 获取当前登录用户信息 |
-| GET | `/api/analytics/tickets/summary/` | 工单统计摘要 |
+| GET | `/api/analytics/tickets/summary/` | 工单统计摘要，包含数量、分布和评价指标 |
 | GET | `/api/notifications/` | 查询当前用户通知列表 |
 | GET | `/api/notifications/{id}/` | 查询通知详情 |
 | POST | `/api/notifications/{id}/mark-read/` | 标记单条通知为已读 |
@@ -129,6 +129,7 @@ docker compose down
 - 只有管理员或工单创建人可以关闭或重开工单，操作会写入审计日志并通知相关参与者。
 - 只有工单创建人可以评价已关闭工单，一张工单只保留一份最终评价。
 - 工单评价评分范围为 1 到 5，评价后会写入审计日志并通知处理人。
+- 工单统计摘要会按当前用户可见范围计算评价数量、平均分、满意率和评分分布。
 - 创建、更新、删除工单以及新增处理记录时，会自动写入审计日志。
 - 通知是用户私有数据，普通用户只能查询和标记自己的通知。
 
@@ -154,6 +155,18 @@ curl "http://127.0.0.1:8000/api/tickets/?mine=assigned&overdue=true"
 | `has_assignee` | 是否查询已分配工单，支持 `true` 和 `false` |
 | `search` | 按标题和描述搜索关键词 |
 | `ordering` | 排序字段，例如 `-created_at` |
+
+## 工单统计摘要
+
+`GET /api/analytics/tickets/summary/` 会返回当前用户可见范围内的统计数据。
+
+普通用户只统计自己创建、分配给自己或自己关注的工单；管理员统计全部工单。
+
+响应里包含：
+
+- 工单总数、我创建的数量、分配给我的数量、超时数量。
+- 按状态、优先级、分类分组的数量。
+- 评价摘要：评价数、平均分、满意率和 1 到 5 星评分分布。
 
 ## 通知列表查询参数
 
