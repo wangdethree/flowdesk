@@ -6,6 +6,8 @@ db.sqlite3
 .DS_Store
 .idea/
 media/
+node_modules/
+frontend/dist/
 
 # 学习笔记只保留在本地，避免把复习过程和项目代码一起提交到 GitHub。
 docs/
