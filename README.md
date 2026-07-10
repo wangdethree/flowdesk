@@ -81,6 +81,7 @@ docker compose down
 | DELETE | `/api/tickets/{id}/` | 删除工单 |
 | POST | `/api/tickets/{id}/assign/` | 分配或取消分配工单处理人 |
 | POST | `/api/tickets/{id}/remind/` | 催办工单 |
+| POST | `/api/tickets/{id}/set-priority/` | 调整工单优先级 |
 | POST | `/api/tickets/{id}/set-tags/` | 设置工单标签 |
 | POST | `/api/tickets/{id}/watch/` | 关注工单 |
 | POST | `/api/tickets/{id}/unwatch/` | 取消关注工单 |
@@ -109,6 +110,7 @@ docker compose down
 - 处理人可以查看和处理分配给自己的工单，但不能删除工单。
 - 只有管理员或工单创建人可以分配、取消分配处理人。
 - 已分配且未完成的工单可以催办，催办会通知处理人并写入审计日志。
+- 只有管理员或工单创建人可以调整工单优先级，调整后会通知处理人和关注人。
 - 只有管理员或工单创建人可以维护工单标签。
 - 工单参与者可以关注或取消关注工单，关注人能收到评论和状态变化通知。
 - 工单参与者可以上传和查看附件，单个附件大小限制为 5MB。
