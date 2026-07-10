@@ -14,14 +14,21 @@ class NotificationAPITests(APITestCase):
         self.user = User.objects.create_user(username='notify_user', password='TestPass123')
         self.other_user = User.objects.create_user(username='other_notify_user', password='TestPass123')
 
-    def create_notification(self, recipient=None, title='测试通知', is_read=False):
+    def create_notification(
+        self,
+        recipient=None,
+        title='测试通知',
+        is_read=False,
+        notification_type=NotificationType.TICKET_ASSIGNED,
+        message='你有一条新的工单通知。',
+    ):
         """创建测试通知的小工具，减少每个用例里的重复代码。"""
 
         return Notification.objects.create(
             recipient=recipient or self.user,
-            notification_type=NotificationType.TICKET_ASSIGNED,
+            notification_type=notification_type,
             title=title,
-            message='你有一条新的工单通知。',
+            message=message,
             target_type='Ticket',
             target_id='1',
             is_read=is_read,
@@ -89,3 +96,67 @@ class NotificationAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['unread_count'], 2)
+
+    def test_filter_notifications_by_read_status(self):
+        """is_read 查询参数可以区分当前用户的已读和未读通知。"""
+
+        unread_notification = self.create_notification(title='未读通知')
+        self.create_notification(title='已读通知', is_read=True)
+        self.create_notification(recipient=self.other_user, title='别人的未读通知')
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(reverse('notification-list'), {'is_read': 'false'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['id'], unread_notification.id)
+
+    def test_filter_notifications_by_type(self):
+        """notification_type 查询参数可以只看某一类通知。"""
+
+        reminded_notification = self.create_notification(
+            title='催办通知',
+            notification_type=NotificationType.TICKET_REMINDED,
+        )
+        self.create_notification(
+            title='评论通知',
+            notification_type=NotificationType.TICKET_COMMENTED,
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            reverse('notification-list'),
+            {'notification_type': NotificationType.TICKET_REMINDED},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['id'], reminded_notification.id)
+
+    def test_search_notifications_by_title_and_message(self):
+        """search 查询参数可以按通知标题和内容搜索。"""
+
+        self.create_notification(title='普通通知', message='这条通知不应该被搜索出来。')
+        matched_notification = self.create_notification(
+            title='紧急催办',
+            message='客户再次反馈，请尽快处理。',
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(reverse('notification-list'), {'search': '客户再次'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['id'], matched_notification.id)
+
+    def test_invalid_notification_filter_returns_bad_request(self):
+        """筛选参数非法时返回 400，避免前端误传参数后接口静默返回错误结果。"""
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            reverse('notification-list'),
+            {'notification_type': 'not-exists'},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
