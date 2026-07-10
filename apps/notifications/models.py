@@ -13,6 +13,7 @@ class NotificationType(models.TextChoices):
     TICKET_COMMENTED = 'ticket_commented', '工单评论'
     TICKET_STATUS_CHANGED = 'ticket_status_changed', '状态变更'
     TICKET_REMINDED = 'ticket_reminded', '工单催办'
+    TICKET_PRIORITY_CHANGED = 'ticket_priority_changed', '优先级变更'
 
 
 class Notification(models.Model):
