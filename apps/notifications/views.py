@@ -1,13 +1,25 @@
-from rest_framework import mixins, status, viewsets
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema, extend_schema_view
+from rest_framework import filters, mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.notifications.filters import NotificationFilterBackend
 from apps.notifications.models import Notification
 from apps.notifications.serializers import NotificationSerializer
 from apps.notifications.services import get_unread_notification_count, mark_all_notifications_as_read
 
 
+@extend_schema_view(
+    list=extend_schema(
+        parameters=[
+            OpenApiParameter('is_read', OpenApiTypes.BOOL, OpenApiParameter.QUERY, description='是否只看已读通知'),
+            OpenApiParameter('notification_type', OpenApiTypes.STR, OpenApiParameter.QUERY, description='按通知类型筛选'),
+            OpenApiParameter('search', OpenApiTypes.STR, OpenApiParameter.QUERY, description='按标题和内容搜索'),
+            OpenApiParameter('ordering', OpenApiTypes.STR, OpenApiParameter.QUERY, description='排序字段，例如 -created_at'),
+        ]
+    ),
+)
 class NotificationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """当前用户通知接口。
 
@@ -17,6 +29,12 @@ class NotificationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
 
     serializer_class = NotificationSerializer
     permission_classes = [IsAuthenticated]
+    # NotificationFilterBackend 负责业务筛选；SearchFilter 支持 ?search=关键词；
+    # OrderingFilter 支持 ?ordering=created_at 或 ?ordering=-created_at。
+    filter_backends = [NotificationFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['title', 'message']
+    ordering_fields = ['created_at', 'read_at']
+    ordering = ['-created_at']
 
     def get_queryset(self):
         """只返回当前登录用户自己的通知。"""
