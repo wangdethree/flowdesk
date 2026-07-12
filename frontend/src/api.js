@@ -54,6 +54,14 @@ export const authApi = {
   me(token) {
     return request('/api/users/me/', { token });
   },
+  updateMe(token, payload) {
+    // 个人资料只允许改邮箱、名和姓，用户名一般作为登录标识不让前端随便改。
+    return request('/api/users/me/', { token, method: 'PATCH', body: payload });
+  },
+  changePassword(token, payload) {
+    // 修改密码是明确的业务动作，所以后端单独提供了 change-password 接口。
+    return request('/api/users/change-password/', { token, method: 'POST', body: payload });
+  },
 };
 
 export const dashboardApi = {
@@ -88,8 +96,40 @@ export const ticketApi = {
   addComment(token, id, payload) {
     return request(`/api/tickets/${id}/comments/`, { token, method: 'POST', body: payload });
   },
+  assign(token, id, assignee) {
+    // assignee 传用户 ID；传 null 表示取消当前处理人。
+    return request(`/api/tickets/${id}/assign/`, { token, method: 'POST', body: { assignee } });
+  },
+  remind(token, id, message) {
+    // 催办不会改变工单状态，只负责通知当前处理人。
+    return request(`/api/tickets/${id}/remind/`, { token, method: 'POST', body: { message } });
+  },
   close(token, id, reason) {
     return request(`/api/tickets/${id}/close/`, { token, method: 'POST', body: { reason } });
+  },
+  reopen(token, id, reason) {
+    return request(`/api/tickets/${id}/reopen/`, { token, method: 'POST', body: { reason } });
+  },
+  setPriority(token, id, priority) {
+    return request(`/api/tickets/${id}/set-priority/`, { token, method: 'POST', body: { priority } });
+  },
+  setTags(token, id, tags) {
+    // 后端接收标签 ID 数组，例如 { tags: [1, 2] }。
+    return request(`/api/tickets/${id}/set-tags/`, { token, method: 'POST', body: { tags } });
+  },
+  watch(token, id) {
+    return request(`/api/tickets/${id}/watch/`, { token, method: 'POST' });
+  },
+  unwatch(token, id) {
+    return request(`/api/tickets/${id}/unwatch/`, { token, method: 'POST' });
+  },
+  attachments(token, id) {
+    return request(`/api/tickets/${id}/attachments/`, { token });
+  },
+  uploadAttachment(token, id, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request(`/api/tickets/${id}/attachments/`, { token, method: 'POST', body: formData });
   },
   feedback(token, id) {
     return request(`/api/tickets/${id}/feedback/`, { token });
@@ -110,5 +150,11 @@ export const notificationApi = {
   },
   markAllRead(token) {
     return request('/api/notifications/mark-all-read/', { token, method: 'POST' });
+  },
+  markRead(token, id) {
+    return request(`/api/notifications/${id}/mark-read/`, { token, method: 'POST' });
+  },
+  clearRead(token) {
+    return request('/api/notifications/clear-read/', { token, method: 'DELETE' });
   },
 };
