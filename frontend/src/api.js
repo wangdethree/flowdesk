@@ -127,6 +127,16 @@ export const ticketApi = {
   timeline(token, id) {
     return request(`/api/tickets/${id}/timeline/`, { token });
   },
+  auditLogs(token, id, params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== '' && value !== null && value !== undefined) {
+        search.set(key, value);
+      }
+    });
+    const query = search.toString();
+    return request(`/api/tickets/${id}/audit-logs/${query ? `?${query}` : ''}`, { token });
+  },
   comments(token, id) {
     return request(`/api/tickets/${id}/comments/`, { token });
   },
