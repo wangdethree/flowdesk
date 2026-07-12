@@ -48,9 +48,11 @@ VITE_API_BASE_URL=https://your-api.example.com
 - 已有工单处理建议
 - 工单中心
 - 工单多条件筛选
+- 工单分页
 - 工单基础信息编辑
 - 工单状态推进
 - 工单详情和时间线
+- 工单审计日志
 - 评论和处理记录
 - 分配处理人
 - 调整优先级
@@ -63,6 +65,7 @@ VITE_API_BASE_URL=https://your-api.example.com
 - 工单评价
 - 通知中心
 - 通知搜索和类型筛选
+- 通知分页
 - 单条通知已读、全部已读和清理已读通知
 - 标签管理
 - 账号设置
@@ -70,6 +73,7 @@ VITE_API_BASE_URL=https://your-api.example.com
 ## 学习重点
 
 - `src/api.js` 是前后端分离里的接口层，负责统一封装 token、请求体和错误处理。
+- `src/api.js` 支持 access token 过期后自动使用 refresh token 续期，并重试原请求一次。
 - `src/App.vue` 是第一版管理后台主界面，当前为了学习方便暂时放在一个文件里，后续可以拆成页面组件和业务组件。
 - `src/styles.css` 负责统一布局和表单样式，便于先把功能闭环跑通。
 - 智能助手当前调用后端规则引擎接口，后续可以把后端实现替换成大模型或 Agent 编排。
