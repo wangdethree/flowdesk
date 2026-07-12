@@ -37,6 +37,7 @@
       <nav class="nav-list">
         <button :class="{ active: activeView === 'dashboard' }" @click="switchView('dashboard')">统计看板</button>
         <button :class="{ active: activeView === 'tickets' }" @click="switchView('tickets')">工单中心</button>
+        <button :class="{ active: activeView === 'assistant' }" @click="switchView('assistant')">智能助手</button>
         <button :class="{ active: activeView === 'notifications' }" @click="switchView('notifications')">
           通知中心
           <span v-if="unreadCount" class="badge">{{ unreadCount }}</span>
@@ -265,6 +266,7 @@
               <button class="secondary-button" @click="toggleWatch">
                 {{ isWatching ? '取消关注' : '关注工单' }}
               </button>
+              <button class="secondary-button" @click="loadTicketAssistantSuggestion">智能建议</button>
               <button class="secondary-button" @click="showEditForm = !showEditForm">编辑工单</button>
               <button
                 v-for="action in statusActions"
@@ -288,6 +290,21 @@
                 评价工单
               </button>
             </div>
+
+            <section v-if="ticketAssistantSuggestion" class="assistant-panel">
+              <div class="panel-header">
+                <h4>智能处理建议</h4>
+                <small>可信度：{{ Math.round(ticketAssistantSuggestion.confidence * 100) }}%</small>
+              </div>
+              <p>{{ ticketAssistantSuggestion.summary }}</p>
+              <div class="suggestion-list">
+                <span v-for="action in ticketAssistantSuggestion.next_actions" :key="action">{{ action }}</span>
+              </div>
+              <textarea :value="ticketAssistantSuggestion.reply_template" readonly></textarea>
+              <div v-if="ticketAssistantSuggestion.recent_comments.length" class="mini-list">
+                <small v-for="comment in ticketAssistantSuggestion.recent_comments" :key="comment">{{ comment }}</small>
+              </div>
+            </section>
 
             <form v-if="showEditForm" class="inline-form" @submit.prevent="updateSelectedTicket">
               <input v-model.trim="editTicketForm.title" placeholder="工单标题" required />
@@ -401,6 +418,59 @@
             </div>
           </template>
           <div v-else class="empty-state">选择一张工单查看详情。</div>
+        </section>
+      </section>
+
+      <section v-if="activeView === 'assistant'" class="assistant-grid">
+        <form class="panel account-form" @submit.prevent="generateTicketDraft">
+          <div class="panel-header">
+            <h3>生成工单草稿</h3>
+          </div>
+          <textarea
+            v-model.trim="assistantDraftForm.raw_text"
+            placeholder="例如：线上支付全部失败，客户无法完成订单，已经影响多个用户。"
+            required
+          ></textarea>
+          <button class="primary-button" type="submit">生成建议</button>
+        </form>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h3>草稿建议</h3>
+            <small v-if="assistantDraftSuggestion">
+              可信度：{{ Math.round(assistantDraftSuggestion.confidence * 100) }}%
+            </small>
+          </div>
+          <template v-if="assistantDraftSuggestion">
+            <div class="draft-preview">
+              <label>
+                标题
+                <input :value="assistantDraftSuggestion.title" readonly />
+              </label>
+              <div class="form-grid">
+                <label>
+                  分类
+                  <input :value="categoryLabel(assistantDraftSuggestion.category)" readonly />
+                </label>
+                <label>
+                  优先级
+                  <input :value="priorityLabel(assistantDraftSuggestion.priority)" readonly />
+                </label>
+              </div>
+              <label>
+                描述
+                <textarea :value="assistantDraftSuggestion.description" readonly></textarea>
+              </label>
+              <div class="suggestion-list">
+                <span v-for="tag in assistantDraftSuggestion.suggested_tags" :key="tag">{{ tag }}</span>
+              </div>
+              <div class="mini-list">
+                <small v-for="item in assistantDraftSuggestion.checklist" :key="item">{{ item }}</small>
+              </div>
+              <button class="primary-button" @click="applyDraftSuggestion" type="button">应用到新建工单</button>
+            </div>
+          </template>
+          <div v-else class="empty-state compact-empty">输入问题描述后生成草稿建议。</div>
         </section>
       </section>
 
@@ -529,7 +599,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { authApi, dashboardApi, notificationApi, tagApi, ticketApi } from './api';
+import { assistantApi, authApi, dashboardApi, notificationApi, tagApi, ticketApi } from './api';
 
 const token = ref(localStorage.getItem('flowdesk_access') || '');
 const currentUser = ref(null);
@@ -545,6 +615,8 @@ const timeline = ref([]);
 const attachments = ref([]);
 const notifications = ref([]);
 const tags = ref([]);
+const assistantDraftSuggestion = ref(null);
+const ticketAssistantSuggestion = ref(null);
 const unreadCount = ref(0);
 
 const showCreateTicket = ref(false);
@@ -584,6 +656,10 @@ const ticketFilters = reactive({
   category: '',
   tag: '',
   overdue: '',
+});
+
+const assistantDraftForm = reactive({
+  raw_text: '',
 });
 
 const notificationFilters = reactive({
@@ -640,6 +716,7 @@ const feedbackForm = reactive({
 
 const pageTitle = computed(() => {
   if (activeView.value === 'tickets') return '工单中心';
+  if (activeView.value === 'assistant') return '智能助手';
   if (activeView.value === 'notifications') return '通知中心';
   if (activeView.value === 'tags') return '标签管理';
   if (activeView.value === 'account') return '账号设置';
@@ -648,6 +725,7 @@ const pageTitle = computed(() => {
 
 const pageSubtitle = computed(() => {
   if (activeView.value === 'tickets') return '查看、创建和跟进工单。';
+  if (activeView.value === 'assistant') return '用规则引擎生成工单草稿和处理建议，后续可替换成大模型。';
   if (activeView.value === 'notifications') return '查看系统提醒和协作动态。';
   if (activeView.value === 'tags') return '维护工单标签，方便筛选和归类。';
   if (activeView.value === 'account') return '维护个人资料和账号密码。';
@@ -856,6 +934,7 @@ async function loadTags() {
 
 async function openTicket(id) {
   resetMessages();
+  ticketAssistantSuggestion.value = null;
   selectedTicket.value = await ticketApi.detail(token.value, id);
   const [timelineData, attachmentData] = await Promise.all([
     ticketApi.timeline(token.value, id),
@@ -865,6 +944,45 @@ async function openTicket(id) {
   attachments.value = attachmentData.results || [];
   resetTicketForms();
   fillTicketActionForms(selectedTicket.value);
+}
+
+async function generateTicketDraft() {
+  try {
+    assistantDraftSuggestion.value = await assistantApi.draftTicket(
+      token.value,
+      assistantDraftForm.raw_text,
+    );
+    setSuccess('草稿建议已生成。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+function applyDraftSuggestion() {
+  if (!assistantDraftSuggestion.value) return;
+
+  // 这里只把 AI 建议填进新建工单表单，不直接创建工单。
+  // 这样用户还有机会人工确认标题、描述和优先级，避免自动化建议误写入业务数据。
+  ticketForm.title = assistantDraftSuggestion.value.title;
+  ticketForm.description = assistantDraftSuggestion.value.description;
+  ticketForm.category = assistantDraftSuggestion.value.category;
+  ticketForm.priority = assistantDraftSuggestion.value.priority;
+  showCreateTicket.value = true;
+  switchView('tickets');
+  setSuccess('已填入新建工单表单，请确认后提交。');
+}
+
+async function loadTicketAssistantSuggestion() {
+  if (!selectedTicket.value) return;
+  try {
+    ticketAssistantSuggestion.value = await assistantApi.ticketSuggestion(
+      token.value,
+      selectedTicket.value.id,
+    );
+    setSuccess('智能建议已生成。');
+  } catch (error) {
+    setError(error);
+  }
 }
 
 async function createTicket() {
