@@ -27,6 +27,29 @@ async function parseResponse(response) {
   return response.json();
 }
 
+function normalizeErrorMessage(data) {
+  // DRF 的错误响应有多种形态：
+  // - { detail: '...' } 常见于权限、认证和 404
+  // - { non_field_errors: ['...'] } 常见于整体表单校验
+  // - { field: ['...'] } 常见于字段校验，例如密码太短、标题不能为空
+  // 前端统一整理成一句话，用户才知道具体哪里填错了。
+  if (!data) return '请求失败，请稍后重试。';
+  if (typeof data.detail === 'string') return data.detail;
+  if (Array.isArray(data.non_field_errors) && data.non_field_errors.length) {
+    return data.non_field_errors[0];
+  }
+
+  const fieldError = Object.entries(data).find(([, value]) => {
+    return Array.isArray(value) && value.length > 0;
+  });
+  if (fieldError) {
+    const [field, messages] = fieldError;
+    return `${field}: ${messages[0]}`;
+  }
+
+  return '请求失败，请稍后重试。';
+}
+
 export async function request(path, { token, method = 'GET', body, headers } = {}) {
   const isFormData = body instanceof FormData;
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -40,7 +63,7 @@ export async function request(path, { token, method = 'GET', body, headers } = {
   const data = await parseResponse(response);
 
   if (!response.ok) {
-    const message = data?.detail || data?.non_field_errors?.[0] || '请求失败，请稍后重试。';
+    const message = normalizeErrorMessage(data);
     throw new ApiError(message, response.status, data);
   }
 
