@@ -110,6 +110,10 @@ export const ticketApi = {
   create(token, payload) {
     return request('/api/tickets/', { token, method: 'POST', body: payload });
   },
+  update(token, id, payload) {
+    // 工单基础信息和合法状态流转走 PATCH，由后端统一校验权限和状态流转规则。
+    return request(`/api/tickets/${id}/`, { token, method: 'PATCH', body: payload });
+  },
   timeline(token, id) {
     return request(`/api/tickets/${id}/timeline/`, { token });
   },
@@ -162,12 +166,34 @@ export const ticketApi = {
   },
 };
 
+export const tagApi = {
+  list(token, params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== '' && value !== null && value !== undefined) {
+        search.set(key, value);
+      }
+    });
+    const query = search.toString();
+    return request(`/api/ticket-tags/${query ? `?${query}` : ''}`, { token });
+  },
+  create(token, payload) {
+    // 标签是可复用资源，创建后可以绑定到多张工单上。
+    return request('/api/ticket-tags/', { token, method: 'POST', body: payload });
+  },
+};
+
 export const notificationApi = {
   unreadCount(token) {
     return request('/api/notifications/unread-count/', { token });
   },
   list(token, params = {}) {
-    const search = new URLSearchParams(params);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== '' && value !== null && value !== undefined) {
+        search.set(key, value);
+      }
+    });
     const query = search.toString();
     return request(`/api/notifications/${query ? `?${query}` : ''}`, { token });
   },
