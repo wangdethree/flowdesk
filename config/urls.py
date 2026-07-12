@@ -15,6 +15,8 @@ urlpatterns = [
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     # 统计接口统一放在 /api/analytics/ 下，和工单 CRUD 主接口保持边界清晰。
     path('api/analytics/', include('apps.analytics.urls')),
+    # 智能助手接口单独放在 /api/ai/ 下，后续替换成大模型实现时不会影响工单主接口。
+    path('api/ai/', include('apps.ai.urls')),
     path('api/', include('apps.notifications.urls')),
     path('api/', include('apps.common.urls')),
     # 工单接口挂在 /api/ 下，实际路径由 apps.tickets.urls 里的 router 生成。
