@@ -10,13 +10,26 @@ export class ApiError extends Error {
 }
 
 function buildHeaders(token, extraHeaders = {}) {
+  const storedToken = getStoredAccessToken();
   const headers = {
     ...extraHeaders,
   };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+  if (storedToken || token) {
+    // 优先使用 localStorage 里的 access token。
+    // 这样自动刷新 token 后，即使调用方还传着旧 token，下一次请求也会使用新 token。
+    headers.Authorization = `Bearer ${storedToken || token}`;
   }
   return headers;
+}
+
+function getStoredAccessToken() {
+  if (typeof localStorage === 'undefined') return '';
+  return localStorage.getItem('flowdesk_access') || '';
+}
+
+function getStoredRefreshToken() {
+  if (typeof localStorage === 'undefined') return '';
+  return localStorage.getItem('flowdesk_refresh') || '';
 }
 
 async function parseResponse(response) {
@@ -50,7 +63,23 @@ function normalizeErrorMessage(data) {
   return '请求失败，请稍后重试。';
 }
 
-export async function request(path, { token, method = 'GET', body, headers } = {}) {
+async function refreshAccessToken() {
+  const refresh = getStoredRefreshToken();
+  if (!refresh) return '';
+
+  const response = await fetch(`${API_BASE_URL}/api/users/token/refresh/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh }),
+  });
+  const data = await parseResponse(response);
+  if (!response.ok || !data?.access) return '';
+
+  localStorage.setItem('flowdesk_access', data.access);
+  return data.access;
+}
+
+export async function request(path, { token, method = 'GET', body, headers, hasRetried = false } = {}) {
   const isFormData = body instanceof FormData;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
@@ -63,6 +92,15 @@ export async function request(path, { token, method = 'GET', body, headers } = {
   const data = await parseResponse(response);
 
   if (!response.ok) {
+    // access token 过期时，后端会返回 401。
+    // 这里尝试用 refresh token 换一个新的 access token，然后重试原请求一次。
+    // 只重试一次可以避免 refresh token 也失效时陷入无限循环。
+    if (response.status === 401 && !hasRetried && !path.includes('/token/refresh/')) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        return request(path, { token: newToken, method, body, headers, hasRetried: true });
+      }
+    }
     const message = normalizeErrorMessage(data);
     throw new ApiError(message, response.status, data);
   }
