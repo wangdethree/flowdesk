@@ -41,6 +41,7 @@
           通知中心
           <span v-if="unreadCount" class="badge">{{ unreadCount }}</span>
         </button>
+        <button :class="{ active: activeView === 'tags' }" @click="switchView('tags')">标签管理</button>
         <button :class="{ active: activeView === 'account' }" @click="switchView('account')">账号设置</button>
       </nav>
 
@@ -116,6 +117,36 @@
             </div>
           </div>
         </article>
+
+        <article class="panel span-2">
+          <div class="panel-header">
+            <h3>优先级分布</h3>
+          </div>
+          <div class="bar-list">
+            <div v-for="item in priorityChart" :key="item.key" class="bar-row">
+              <span>{{ item.label }}</span>
+              <div class="bar-track">
+                <div class="bar-fill danger" :style="{ width: item.percent + '%' }"></div>
+              </div>
+              <b>{{ item.value }}</b>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel span-2">
+          <div class="panel-header">
+            <h3>分类分布</h3>
+          </div>
+          <div class="bar-list">
+            <div v-for="item in categoryChart" :key="item.key" class="bar-row">
+              <span>{{ item.label }}</span>
+              <div class="bar-track">
+                <div class="bar-fill muted-fill" :style="{ width: item.percent + '%' }"></div>
+              </div>
+              <b>{{ item.value }}</b>
+            </div>
+          </div>
+        </article>
       </section>
 
       <section v-if="activeView === 'tickets'" class="tickets-layout">
@@ -127,7 +158,7 @@
             </button>
           </div>
 
-          <form class="filter-row" @submit.prevent="loadTickets">
+          <form class="filter-row wide-filter" @submit.prevent="loadTickets">
             <input v-model.trim="ticketFilters.search" placeholder="搜索标题或描述" />
             <select v-model="ticketFilters.status">
               <option value="">全部状态</option>
@@ -141,6 +172,29 @@
               <option value="created">我创建的</option>
               <option value="assigned">分配给我的</option>
               <option value="watched">我关注的</option>
+            </select>
+            <select v-model="ticketFilters.priority">
+              <option value="">全部优先级</option>
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+              <option value="urgent">紧急</option>
+            </select>
+            <select v-model="ticketFilters.category">
+              <option value="">全部分类</option>
+              <option value="bug">故障问题</option>
+              <option value="feature">功能需求</option>
+              <option value="consult">咨询支持</option>
+              <option value="other">其他</option>
+            </select>
+            <select v-model="ticketFilters.tag">
+              <option value="">全部标签</option>
+              <option v-for="tag in tags" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
+            </select>
+            <select v-model="ticketFilters.overdue">
+              <option value="">不限超时</option>
+              <option value="true">只看超时</option>
+              <option value="false">只看未超时</option>
             </select>
             <button class="secondary-button" type="submit">筛选</button>
           </form>
@@ -162,6 +216,10 @@
                 <option value="urgent">紧急</option>
               </select>
             </div>
+            <label>
+              截止时间
+              <input v-model="ticketForm.due_at" type="datetime-local" />
+            </label>
             <button class="primary-button" type="submit">创建工单</button>
           </form>
 
@@ -197,6 +255,8 @@
               <span>创建人：{{ selectedTicket.creator_username }}</span>
               <span>处理人：{{ selectedTicket.assignee_username || '未分配' }}</span>
               <span>优先级：{{ priorityLabel(selectedTicket.priority) }}</span>
+              <span>分类：{{ categoryLabel(selectedTicket.category) }}</span>
+              <span>截止：{{ selectedTicket.due_at ? formatDate(selectedTicket.due_at) : '未设置' }}</span>
               <span>关注人：{{ selectedTicket.watcher_usernames?.join('、') || '暂无' }}</span>
               <span>标签：{{ selectedTicket.tag_names?.join('、') || '暂无' }}</span>
             </div>
@@ -204,6 +264,15 @@
             <div class="action-row wrap">
               <button class="secondary-button" @click="toggleWatch">
                 {{ isWatching ? '取消关注' : '关注工单' }}
+              </button>
+              <button class="secondary-button" @click="showEditForm = !showEditForm">编辑工单</button>
+              <button
+                v-for="action in statusActions"
+                :key="action.status"
+                class="secondary-button"
+                @click="advanceTicketStatus(action.status)"
+              >
+                {{ action.label }}
               </button>
               <button class="secondary-button" @click="showAssignForm = !showAssignForm">分配处理人</button>
               <button class="secondary-button" @click="showPriorityForm = !showPriorityForm">调整优先级</button>
@@ -219,6 +288,21 @@
                 评价工单
               </button>
             </div>
+
+            <form v-if="showEditForm" class="inline-form" @submit.prevent="updateSelectedTicket">
+              <input v-model.trim="editTicketForm.title" placeholder="工单标题" required />
+              <textarea v-model.trim="editTicketForm.description" placeholder="问题描述" required></textarea>
+              <div class="form-grid">
+                <select v-model="editTicketForm.category">
+                  <option value="bug">故障问题</option>
+                  <option value="feature">功能需求</option>
+                  <option value="consult">咨询支持</option>
+                  <option value="other">其他</option>
+                </select>
+                <input v-model="editTicketForm.due_at" type="datetime-local" />
+              </div>
+              <button class="primary-button" type="submit">保存工单</button>
+            </form>
 
             <form v-if="showAssignForm" class="inline-form compact-form" @submit.prevent="assignSelectedTicket">
               <label>
@@ -242,11 +326,15 @@
               <button class="primary-button" type="submit">保存优先级</button>
             </form>
 
-            <form v-if="showTagForm" class="inline-form compact-form" @submit.prevent="setSelectedTags">
-              <label>
-                标签 ID
-                <input v-model.trim="tagForm.ids" placeholder="多个标签用英文逗号分隔，例如 1,2" />
-              </label>
+            <form v-if="showTagForm" class="inline-form" @submit.prevent="setSelectedTags">
+              <div class="checkbox-grid">
+                <label v-for="tag in tags" :key="tag.id" class="check-option">
+                  <input v-model="tagForm.ids" type="checkbox" :value="tag.id" />
+                  <span class="tag-swatch" :style="{ backgroundColor: tag.color }"></span>
+                  {{ tag.name }}
+                </label>
+              </div>
+              <p v-if="!tags.length" class="muted">暂无标签，可以先到标签管理里创建。</p>
               <button class="primary-button" type="submit">保存标签</button>
             </form>
 
@@ -338,6 +426,39 @@
         </div>
       </section>
 
+      <section v-if="activeView === 'tags'" class="tags-layout">
+        <form class="panel account-form" @submit.prevent="createTag">
+          <div class="panel-header">
+            <h3>新建标签</h3>
+          </div>
+          <label>
+            标签名称
+            <input v-model.trim="tagCreateForm.name" maxlength="40" placeholder="例如 线上故障" required />
+          </label>
+          <label>
+            标签颜色
+            <input v-model="tagCreateForm.color" type="color" />
+          </label>
+          <button class="primary-button" type="submit">创建标签</button>
+        </form>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h3>标签列表</h3>
+            <button class="secondary-button" @click="loadTags">刷新</button>
+          </div>
+          <div class="tag-list">
+            <article v-for="tag in tags" :key="tag.id" class="tag-card">
+              <span class="tag-swatch large" :style="{ backgroundColor: tag.color }"></span>
+              <div>
+                <strong>{{ tag.name }}</strong>
+                <small>ID：{{ tag.id }} · {{ formatDate(tag.created_at) }}</small>
+              </div>
+            </article>
+          </div>
+        </section>
+      </section>
+
       <section v-if="activeView === 'account'" class="account-grid">
         <form class="panel account-form" @submit.prevent="updateProfile">
           <div class="panel-header">
@@ -389,7 +510,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { authApi, dashboardApi, notificationApi, ticketApi } from './api';
+import { authApi, dashboardApi, notificationApi, tagApi, ticketApi } from './api';
 
 const token = ref(localStorage.getItem('flowdesk_access') || '');
 const currentUser = ref(null);
@@ -404,9 +525,11 @@ const selectedTicket = ref(null);
 const timeline = ref([]);
 const attachments = ref([]);
 const notifications = ref([]);
+const tags = ref([]);
 const unreadCount = ref(0);
 
 const showCreateTicket = ref(false);
+const showEditForm = ref(false);
 const showAssignForm = ref(false);
 const showPriorityForm = ref(false);
 const showTagForm = ref(false);
@@ -438,6 +561,10 @@ const ticketFilters = reactive({
   search: '',
   status: '',
   mine: '',
+  priority: '',
+  category: '',
+  tag: '',
+  overdue: '',
 });
 
 const ticketForm = reactive({
@@ -445,6 +572,14 @@ const ticketForm = reactive({
   description: '',
   category: 'bug',
   priority: 'medium',
+  due_at: '',
+});
+
+const editTicketForm = reactive({
+  title: '',
+  description: '',
+  category: 'bug',
+  due_at: '',
 });
 
 const assignForm = reactive({
@@ -456,7 +591,12 @@ const priorityForm = reactive({
 });
 
 const tagForm = reactive({
-  ids: '',
+  ids: [],
+});
+
+const tagCreateForm = reactive({
+  name: '',
+  color: '#64748b',
 });
 
 const reminderForm = reactive({
@@ -476,6 +616,7 @@ const feedbackForm = reactive({
 const pageTitle = computed(() => {
   if (activeView.value === 'tickets') return '工单中心';
   if (activeView.value === 'notifications') return '通知中心';
+  if (activeView.value === 'tags') return '标签管理';
   if (activeView.value === 'account') return '账号设置';
   return '统计看板';
 });
@@ -483,20 +624,43 @@ const pageTitle = computed(() => {
 const pageSubtitle = computed(() => {
   if (activeView.value === 'tickets') return '查看、创建和跟进工单。';
   if (activeView.value === 'notifications') return '查看系统提醒和协作动态。';
+  if (activeView.value === 'tags') return '维护工单标签，方便筛选和归类。';
   if (activeView.value === 'account') return '维护个人资料和账号密码。';
   return '查看工单数量、状态分布和评价指标。';
 });
 
+function buildChartRows(source, rows) {
+  const values = source || {};
+  const normalizedRows = rows.map(([key, label]) => ({ key, label, value: values[key] || 0 }));
+  const max = Math.max(...normalizedRows.map((item) => item.value), 1);
+  return normalizedRows.map((item) => ({ ...item, percent: Math.round((item.value / max) * 100) }));
+}
+
 const statusChart = computed(() => {
-  const statusMap = summary.value?.by_status || {};
-  const rows = [
+  return buildChartRows(summary.value?.by_status, [
     ['open', '待处理'],
     ['in_progress', '处理中'],
     ['resolved', '已解决'],
     ['closed', '已关闭'],
-  ].map(([key, label]) => ({ key, label, value: statusMap[key] || 0 }));
-  const max = Math.max(...rows.map((item) => item.value), 1);
-  return rows.map((item) => ({ ...item, percent: Math.round((item.value / max) * 100) }));
+  ]);
+});
+
+const priorityChart = computed(() => {
+  return buildChartRows(summary.value?.by_priority, [
+    ['low', '低'],
+    ['medium', '中'],
+    ['high', '高'],
+    ['urgent', '紧急'],
+  ]);
+});
+
+const categoryChart = computed(() => {
+  return buildChartRows(summary.value?.by_category, [
+    ['bug', '故障问题'],
+    ['feature', '功能需求'],
+    ['consult', '咨询支持'],
+    ['other', '其他'],
+  ]);
 });
 
 const satisfactionText = computed(() => {
@@ -507,6 +671,14 @@ const satisfactionText = computed(() => {
 const isWatching = computed(() => {
   const names = selectedTicket.value?.watcher_usernames || [];
   return names.includes(currentUser.value?.username);
+});
+
+const statusActions = computed(() => {
+  // 关闭工单需要填写原因，所以不在这里直接 PATCH 成 closed，而是继续走关闭表单。
+  const status = selectedTicket.value?.status;
+  if (status === 'open') return [{ status: 'in_progress', label: '开始处理' }];
+  if (status === 'in_progress') return [{ status: 'resolved', label: '标记解决' }];
+  return [];
 });
 
 function resetMessages() {
@@ -533,6 +705,7 @@ function syncProfileForm() {
 
 function resetTicketForms() {
   // 切换工单时收起所有动作表单，避免把上一张工单的操作误提交到下一张工单。
+  showEditForm.value = false;
   showAssignForm.value = false;
   showPriorityForm.value = false;
   showTagForm.value = false;
@@ -548,7 +721,30 @@ function resetTicketForms() {
 function fillTicketActionForms(ticket) {
   assignForm.assignee = ticket.assignee || '';
   priorityForm.priority = ticket.priority || 'medium';
-  tagForm.ids = (ticket.tags || []).join(',');
+  tagForm.ids = [...(ticket.tags || [])];
+  editTicketForm.title = ticket.title || '';
+  editTicketForm.description = ticket.description || '';
+  editTicketForm.category = ticket.category || 'other';
+  editTicketForm.due_at = toDateTimeLocal(ticket.due_at);
+}
+
+function buildTicketPayload(form) {
+  // datetime-local 没有时区信息，提交前统一转成 ISO 字符串，让后端 DateTimeField 稳定解析。
+  return {
+    title: form.title,
+    description: form.description,
+    category: form.category,
+    priority: form.priority,
+    due_at: form.due_at ? new Date(form.due_at).toISOString() : null,
+  };
+}
+
+function toDateTimeLocal(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  const offset = date.getTimezoneOffset();
+  const localDate = new Date(date.getTime() - offset * 60 * 1000);
+  return localDate.toISOString().slice(0, 16);
 }
 
 async function login() {
@@ -587,7 +783,7 @@ async function bootstrap() {
   if (!token.value) return;
   currentUser.value = await authApi.me(token.value);
   syncProfileForm();
-  await Promise.all([loadSummary(), loadTickets(), loadNotifications()]);
+  await Promise.all([loadSummary(), loadTags(), loadTickets(), loadNotifications()]);
 }
 
 async function refreshCurrentView() {
@@ -596,6 +792,7 @@ async function refreshCurrentView() {
     if (activeView.value === 'dashboard') await loadSummary();
     if (activeView.value === 'tickets') await loadTickets();
     if (activeView.value === 'notifications') await loadNotifications();
+    if (activeView.value === 'tags') await loadTags();
     if (activeView.value === 'account') {
       currentUser.value = await authApi.me(token.value);
       syncProfileForm();
@@ -617,6 +814,11 @@ async function loadTickets() {
   }
 }
 
+async function loadTags() {
+  const data = await tagApi.list(token.value, { ordering: 'name' });
+  tags.value = data.results || [];
+}
+
 async function openTicket(id) {
   resetMessages();
   selectedTicket.value = await ticketApi.detail(token.value, id);
@@ -632,15 +834,40 @@ async function openTicket(id) {
 
 async function createTicket() {
   try {
-    await ticketApi.create(token.value, ticketForm);
+    await ticketApi.create(token.value, buildTicketPayload(ticketForm));
     ticketForm.title = '';
     ticketForm.description = '';
     ticketForm.category = 'bug';
     ticketForm.priority = 'medium';
+    ticketForm.due_at = '';
     showCreateTicket.value = false;
     await loadTickets();
     await loadSummary();
     setSuccess('工单创建成功。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function updateSelectedTicket() {
+  if (!selectedTicket.value) return;
+  try {
+    await ticketApi.update(token.value, selectedTicket.value.id, buildTicketPayload({
+      ...editTicketForm,
+      priority: selectedTicket.value.priority,
+    }));
+    showEditForm.value = false;
+    await refreshSelectedTicket('工单信息已更新。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function advanceTicketStatus(status) {
+  if (!selectedTicket.value) return;
+  try {
+    await ticketApi.update(token.value, selectedTicket.value.id, { status });
+    await refreshSelectedTicket('工单状态已更新。');
   } catch (error) {
     setError(error);
   }
@@ -705,14 +932,21 @@ async function setSelectedPriority() {
 async function setSelectedTags() {
   if (!selectedTicket.value) return;
   try {
-    const tags = tagForm.ids
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean)
-      .map(Number);
-    await ticketApi.setTags(token.value, selectedTicket.value.id, tags);
+    await ticketApi.setTags(token.value, selectedTicket.value.id, tagForm.ids.map(Number));
     showTagForm.value = false;
     await refreshSelectedTicket('标签已更新。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function createTag() {
+  try {
+    await tagApi.create(token.value, tagCreateForm);
+    tagCreateForm.name = '';
+    tagCreateForm.color = '#64748b';
+    await loadTags();
+    setSuccess('标签创建成功。');
   } catch (error) {
     setError(error);
   }
@@ -867,6 +1101,15 @@ function priorityLabel(value) {
     medium: '中',
     high: '高',
     urgent: '紧急',
+  }[value] || value;
+}
+
+function categoryLabel(value) {
+  return {
+    bug: '故障问题',
+    feature: '功能需求',
+    consult: '咨询支持',
+    other: '其他',
   }[value] || value;
 }
 

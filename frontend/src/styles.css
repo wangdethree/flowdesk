@@ -353,6 +353,14 @@ textarea {
   height: 100%;
 }
 
+.bar-fill.danger {
+  background: #dc2626;
+}
+
+.bar-fill.muted-fill {
+  background: #2563eb;
+}
+
 .feedback-summary,
 .rating-list {
   display: grid;
@@ -383,6 +391,10 @@ textarea {
   gap: 10px;
   grid-template-columns: minmax(0, 1fr) 130px 130px auto;
   margin-bottom: 14px;
+}
+
+.wide-filter {
+  grid-template-columns: minmax(180px, 1fr) repeat(6, minmax(118px, 150px)) auto;
 }
 
 .form-grid {
@@ -432,6 +444,40 @@ textarea {
   border-radius: 999px;
   color: #0f766e;
   padding: 3px 9px;
+}
+
+.checkbox-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.check-option {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  display: flex;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
+}
+
+.check-option input {
+  width: auto;
+}
+
+.tag-swatch {
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 999px;
+  display: inline-flex;
+  height: 14px;
+  width: 14px;
+}
+
+.tag-swatch.large {
+  height: 24px;
+  width: 24px;
 }
 
 .detail-panel {
@@ -559,9 +605,35 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.tags-layout {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+}
+
 .account-form {
   display: grid;
   gap: 14px;
+}
+
+.tag-list {
+  display: grid;
+  gap: 10px;
+}
+
+.tag-card {
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+}
+
+.tag-card small {
+  color: #64748b;
+  display: block;
+  margin-top: 4px;
 }
 
 .empty-state {
@@ -592,6 +664,7 @@ textarea {
   }
 
   .account-grid,
+  .tags-layout,
   .compact-form {
     grid-template-columns: 1fr;
   }
