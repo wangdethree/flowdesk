@@ -92,7 +92,7 @@ curl http://127.0.0.1:8000/api/health/
 4. 创建工单，再依次测试分配、评论、附件、关闭、评价。
 5. 查看 `/api/tickets/{id}/timeline/`，确认工单动态聚合正常。
 6. 查看 `/api/analytics/tickets/summary/`，确认统计摘要正常。
-7. 启动 `frontend/`，通过 Vue 管理后台完成登录、查看看板和工单详情。
+7. 启动 `frontend/`，通过 Vue 管理后台完成登录、看板统计、工单流转、标签管理和通知筛选。
 8. 运行 `manage.py test`，确认自动化测试通过。
 
 ## 测试
