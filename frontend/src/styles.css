@@ -329,7 +329,8 @@ textarea {
 .bar-list,
 .ticket-list,
 .notification-list,
-.timeline {
+.timeline,
+.audit-list {
   display: grid;
   gap: 10px;
 }
@@ -429,6 +430,17 @@ textarea {
 .ticket-row.selected,
 .ticket-row:hover {
   border-color: #0f766e;
+}
+
+.pagination-row {
+  align-items: center;
+  border-top: 1px solid #e2e8f0;
+  color: #64748b;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding-top: 12px;
 }
 
 .ticket-title {
@@ -610,20 +622,23 @@ textarea {
 }
 
 .timeline-item,
-.notification-item {
+.notification-item,
+.audit-item {
   border: 1px solid #e2e8f0;
   border-radius: 6px;
   padding: 12px;
 }
 
 .timeline-item p,
-.notification-item p {
+.notification-item p,
+.audit-item p {
   color: #475569;
   margin: 6px 0;
 }
 
 .timeline-item small,
-.notification-item small {
+.notification-item small,
+.audit-item small {
   color: #64748b;
 }
 

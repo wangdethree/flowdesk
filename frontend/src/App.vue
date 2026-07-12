@@ -159,7 +159,7 @@
             </button>
           </div>
 
-          <form class="filter-row wide-filter" @submit.prevent="loadTickets">
+          <form class="filter-row wide-filter" @submit.prevent="applyTicketFilters">
             <input v-model.trim="ticketFilters.search" placeholder="搜索标题或描述" />
             <select v-model="ticketFilters.status">
               <option value="">全部状态</option>
@@ -239,6 +239,17 @@
                 <small v-for="tag in ticket.tag_names" :key="tag">{{ tag }}</small>
               </span>
             </button>
+          </div>
+          <div class="pagination-row">
+            <span>共 {{ ticketPagination.count }} 条 · 第 {{ ticketFilters.page }} 页</span>
+            <div class="button-group">
+              <button class="secondary-button small-button" :disabled="!ticketPagination.previous" @click="changeTicketPage(-1)">
+                上一页
+              </button>
+              <button class="secondary-button small-button" :disabled="!ticketPagination.next" @click="changeTicketPage(1)">
+                下一页
+              </button>
+            </div>
           </div>
         </section>
 
@@ -416,6 +427,28 @@
                 <small>{{ item.actor_username || '系统' }} · {{ formatDate(item.created_at) }}</small>
               </article>
             </div>
+
+            <section class="subsection">
+              <div class="panel-header">
+                <h4>审计日志</h4>
+                <div class="button-group">
+                  <button class="secondary-button small-button" :disabled="!auditPagination.previous" @click="changeAuditPage(-1)">
+                    上一页
+                  </button>
+                  <button class="secondary-button small-button" :disabled="!auditPagination.next" @click="changeAuditPage(1)">
+                    下一页
+                  </button>
+                </div>
+              </div>
+              <div class="audit-list">
+                <article v-for="log in auditLogs" :key="log.id" class="audit-item">
+                  <strong>{{ log.action_display }}</strong>
+                  <p>{{ log.description }}</p>
+                  <small>{{ log.actor_username || '系统' }} · {{ formatDate(log.created_at) }}</small>
+                </article>
+              </div>
+              <p v-if="!auditLogs.length" class="muted">暂无审计日志。</p>
+            </section>
           </template>
           <div v-else class="empty-state">选择一张工单查看详情。</div>
         </section>
@@ -612,6 +645,7 @@ const summary = ref(null);
 const tickets = ref([]);
 const selectedTicket = ref(null);
 const timeline = ref([]);
+const auditLogs = ref([]);
 const attachments = ref([]);
 const notifications = ref([]);
 const tags = ref([]);
@@ -656,6 +690,20 @@ const ticketFilters = reactive({
   category: '',
   tag: '',
   overdue: '',
+  page: 1,
+});
+
+const ticketPagination = reactive({
+  count: 0,
+  next: null,
+  previous: null,
+});
+
+const auditPagination = reactive({
+  page: 1,
+  count: 0,
+  next: null,
+  previous: null,
 });
 
 const assistantDraftForm = reactive({
@@ -912,6 +960,9 @@ async function loadSummary() {
 async function loadTickets() {
   const data = await ticketApi.list(token.value, ticketFilters);
   tickets.value = data.results || [];
+  ticketPagination.count = data.count || 0;
+  ticketPagination.next = data.next;
+  ticketPagination.previous = data.previous;
 
   // 重新筛选后，当前详情可能已经不在左侧列表里。
   // 这时主动切到第一条结果，避免出现“列表是 A 条件，详情还是旧工单”的错位感。
@@ -919,12 +970,26 @@ async function loadTickets() {
   if (selectedTicket.value && !selectedStillVisible) {
     selectedTicket.value = null;
     timeline.value = [];
+    auditLogs.value = [];
     attachments.value = [];
   }
 
   if (!selectedTicket.value && tickets.value.length) {
     await openTicket(tickets.value[0].id);
   }
+}
+
+async function applyTicketFilters() {
+  // 条件变化后回到第一页，避免用户在第 3 页筛选时误以为没有数据。
+  ticketFilters.page = 1;
+  await loadTickets();
+}
+
+async function changeTicketPage(offset) {
+  const nextPage = ticketFilters.page + offset;
+  if (nextPage < 1) return;
+  ticketFilters.page = nextPage;
+  await loadTickets();
 }
 
 async function loadTags() {
@@ -936,14 +1001,39 @@ async function openTicket(id) {
   resetMessages();
   ticketAssistantSuggestion.value = null;
   selectedTicket.value = await ticketApi.detail(token.value, id);
-  const [timelineData, attachmentData] = await Promise.all([
+  auditPagination.page = 1;
+  const [timelineData, attachmentData, auditData] = await Promise.all([
     ticketApi.timeline(token.value, id),
     ticketApi.attachments(token.value, id),
+    ticketApi.auditLogs(token.value, id, { page: auditPagination.page }),
   ]);
   timeline.value = timelineData.results || [];
   attachments.value = attachmentData.results || [];
+  setAuditData(auditData);
   resetTicketForms();
   fillTicketActionForms(selectedTicket.value);
+}
+
+function setAuditData(data) {
+  auditLogs.value = data.results || [];
+  auditPagination.count = data.count || 0;
+  auditPagination.next = data.next;
+  auditPagination.previous = data.previous;
+}
+
+async function loadAuditLogs() {
+  if (!selectedTicket.value) return;
+  const data = await ticketApi.auditLogs(token.value, selectedTicket.value.id, {
+    page: auditPagination.page,
+  });
+  setAuditData(data);
+}
+
+async function changeAuditPage(offset) {
+  const nextPage = auditPagination.page + offset;
+  if (nextPage < 1) return;
+  auditPagination.page = nextPage;
+  await loadAuditLogs();
 }
 
 async function generateTicketDraft() {
@@ -1030,12 +1120,14 @@ async function refreshSelectedTicket(message = '') {
   if (!selectedTicket.value) return;
   const id = selectedTicket.value.id;
   selectedTicket.value = await ticketApi.detail(token.value, id);
-  const [timelineData, attachmentData] = await Promise.all([
+  const [timelineData, attachmentData, auditData] = await Promise.all([
     ticketApi.timeline(token.value, id),
     ticketApi.attachments(token.value, id),
+    ticketApi.auditLogs(token.value, id, { page: auditPagination.page }),
   ]);
   timeline.value = timelineData.results || [];
   attachments.value = attachmentData.results || [];
+  setAuditData(auditData);
   fillTicketActionForms(selectedTicket.value);
   await loadTickets();
   await loadSummary();
