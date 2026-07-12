@@ -397,6 +397,11 @@ textarea {
   grid-template-columns: minmax(180px, 1fr) repeat(6, minmax(118px, 150px)) auto;
 }
 
+.notification-filter {
+  grid-template-columns: minmax(180px, 1fr) 130px 170px auto;
+  margin-top: 14px;
+}
+
 .form-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: 0;

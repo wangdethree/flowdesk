@@ -412,11 +412,30 @@
             <button class="secondary-button" @click="clearReadNotifications">清理已读</button>
           </div>
         </div>
+        <form class="filter-row notification-filter" @submit.prevent="loadNotifications">
+          <input v-model.trim="notificationFilters.search" placeholder="搜索通知标题或内容" />
+          <select v-model="notificationFilters.is_read">
+            <option value="">全部状态</option>
+            <option value="false">未读</option>
+            <option value="true">已读</option>
+          </select>
+          <select v-model="notificationFilters.notification_type">
+            <option value="">全部类型</option>
+            <option value="ticket_assigned">工单分配</option>
+            <option value="ticket_commented">工单评论</option>
+            <option value="ticket_status_changed">状态变更</option>
+            <option value="ticket_reminded">工单催办</option>
+            <option value="ticket_priority_changed">优先级变更</option>
+            <option value="ticket_feedback_submitted">工单评价</option>
+          </select>
+          <button class="secondary-button" type="submit">筛选</button>
+        </form>
         <div class="notification-list">
           <article v-for="item in notifications" :key="item.id" class="notification-item" :class="{ unread: !item.is_read }">
             <div>
               <strong>{{ item.title }}</strong>
               <p>{{ item.message }}</p>
+              <small>{{ notificationTypeLabel(item.notification_type) }}</small>
             </div>
             <div class="notification-side">
               <small>{{ formatDate(item.created_at) }}</small>
@@ -565,6 +584,12 @@ const ticketFilters = reactive({
   category: '',
   tag: '',
   overdue: '',
+});
+
+const notificationFilters = reactive({
+  search: '',
+  is_read: '',
+  notification_type: '',
 });
 
 const ticketForm = reactive({
@@ -1028,7 +1053,7 @@ async function uploadAttachment(event) {
 
 async function loadNotifications() {
   const [list, count] = await Promise.all([
-    notificationApi.list(token.value, { ordering: '-created_at' }),
+    notificationApi.list(token.value, { ...notificationFilters, ordering: '-created_at' }),
     notificationApi.unreadCount(token.value),
   ]);
   notifications.value = list.results || [];
@@ -1119,6 +1144,17 @@ function eventTypeLabel(value) {
     comment: '评论记录',
     attachment: '附件',
     feedback: '评价',
+  }[value] || value;
+}
+
+function notificationTypeLabel(value) {
+  return {
+    ticket_assigned: '工单分配',
+    ticket_commented: '工单评论',
+    ticket_status_changed: '状态变更',
+    ticket_reminded: '工单催办',
+    ticket_priority_changed: '优先级变更',
+    ticket_feedback_submitted: '工单评价',
   }[value] || value;
 }
 
