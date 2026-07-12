@@ -1,5 +1,7 @@
 """FlowDesk 项目级路由。"""
 from django.contrib import admin
+from django.conf import settings
+from django.conf.urls.static import static
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
@@ -19,3 +21,8 @@ urlpatterns = [
     path('api/', include('apps.tickets.urls')),
     path('api/users/', include('apps.users.urls')),
 ]
+
+if settings.DEBUG:
+    # 本地开发时让 Django 直接提供上传文件，方便前端点击附件链接进行验收。
+    # 生产环境不要依赖这个能力，应该由 Nginx、CDN 或对象存储负责静态文件分发。
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
