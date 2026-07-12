@@ -35,12 +35,13 @@
       </div>
 
       <nav class="nav-list">
-        <button :class="{ active: activeView === 'dashboard' }" @click="activeView = 'dashboard'">统计看板</button>
-        <button :class="{ active: activeView === 'tickets' }" @click="activeView = 'tickets'">工单中心</button>
-        <button :class="{ active: activeView === 'notifications' }" @click="activeView = 'notifications'">
+        <button :class="{ active: activeView === 'dashboard' }" @click="switchView('dashboard')">统计看板</button>
+        <button :class="{ active: activeView === 'tickets' }" @click="switchView('tickets')">工单中心</button>
+        <button :class="{ active: activeView === 'notifications' }" @click="switchView('notifications')">
           通知中心
           <span v-if="unreadCount" class="badge">{{ unreadCount }}</span>
         </button>
+        <button :class="{ active: activeView === 'account' }" @click="switchView('account')">账号设置</button>
       </nav>
 
       <div class="user-box">
@@ -58,6 +59,7 @@
         <button class="secondary-button" :disabled="loading" @click="refreshCurrentView">刷新</button>
       </header>
 
+      <p v-if="successMessage" class="notice success-text">{{ successMessage }}</p>
       <p v-if="errorMessage" class="notice error-text">{{ errorMessage }}</p>
 
       <section v-if="activeView === 'dashboard'" class="dashboard-grid">
@@ -175,6 +177,7 @@
               <span class="tag-row">
                 <small>{{ statusLabel(ticket.status) }}</small>
                 <small>{{ priorityLabel(ticket.priority) }}</small>
+                <small v-for="tag in ticket.tag_names" :key="tag">{{ tag }}</small>
               </span>
             </button>
           </div>
@@ -194,20 +197,72 @@
               <span>创建人：{{ selectedTicket.creator_username }}</span>
               <span>处理人：{{ selectedTicket.assignee_username || '未分配' }}</span>
               <span>优先级：{{ priorityLabel(selectedTicket.priority) }}</span>
+              <span>关注人：{{ selectedTicket.watcher_usernames?.join('、') || '暂无' }}</span>
+              <span>标签：{{ selectedTicket.tag_names?.join('、') || '暂无' }}</span>
             </div>
 
-            <div class="action-row">
+            <div class="action-row wrap">
+              <button class="secondary-button" @click="toggleWatch">
+                {{ isWatching ? '取消关注' : '关注工单' }}
+              </button>
+              <button class="secondary-button" @click="showAssignForm = !showAssignForm">分配处理人</button>
+              <button class="secondary-button" @click="showPriorityForm = !showPriorityForm">调整优先级</button>
+              <button class="secondary-button" @click="showTagForm = !showTagForm">设置标签</button>
+              <button class="secondary-button" @click="showReminderForm = !showReminderForm">催办</button>
               <button v-if="selectedTicket.status !== 'closed'" class="secondary-button" @click="showCloseForm = !showCloseForm">
                 关闭工单
+              </button>
+              <button v-if="selectedTicket.status === 'closed'" class="secondary-button" @click="showReopenForm = !showReopenForm">
+                重开工单
               </button>
               <button v-if="selectedTicket.status === 'closed'" class="secondary-button" @click="showFeedbackForm = !showFeedbackForm">
                 评价工单
               </button>
             </div>
 
+            <form v-if="showAssignForm" class="inline-form compact-form" @submit.prevent="assignSelectedTicket">
+              <label>
+                处理人用户 ID
+                <input v-model.number="assignForm.assignee" min="1" placeholder="例如 2" type="number" />
+              </label>
+              <button class="primary-button" type="submit">保存分配</button>
+              <button class="secondary-button" type="button" @click="clearAssignee">取消分配</button>
+            </form>
+
+            <form v-if="showPriorityForm" class="inline-form compact-form" @submit.prevent="setSelectedPriority">
+              <label>
+                新优先级
+                <select v-model="priorityForm.priority">
+                  <option value="low">低</option>
+                  <option value="medium">中</option>
+                  <option value="high">高</option>
+                  <option value="urgent">紧急</option>
+                </select>
+              </label>
+              <button class="primary-button" type="submit">保存优先级</button>
+            </form>
+
+            <form v-if="showTagForm" class="inline-form compact-form" @submit.prevent="setSelectedTags">
+              <label>
+                标签 ID
+                <input v-model.trim="tagForm.ids" placeholder="多个标签用英文逗号分隔，例如 1,2" />
+              </label>
+              <button class="primary-button" type="submit">保存标签</button>
+            </form>
+
+            <form v-if="showReminderForm" class="inline-form" @submit.prevent="remindSelectedTicket">
+              <textarea v-model.trim="reminderForm.message" placeholder="催办说明，可不填"></textarea>
+              <button class="primary-button" type="submit">发送催办</button>
+            </form>
+
             <form v-if="showCloseForm" class="inline-form" @submit.prevent="closeSelectedTicket">
               <textarea v-model.trim="closeReason" placeholder="填写关闭原因" required></textarea>
               <button class="primary-button" type="submit">确认关闭</button>
+            </form>
+
+            <form v-if="showReopenForm" class="inline-form" @submit.prevent="reopenSelectedTicket">
+              <textarea v-model.trim="reopenReason" placeholder="填写重开原因" required></textarea>
+              <button class="primary-button" type="submit">确认重开</button>
             </form>
 
             <form v-if="showFeedbackForm" class="inline-form" @submit.prevent="submitFeedback">
@@ -221,6 +276,23 @@
               <textarea v-model.trim="feedbackForm.content" placeholder="评价内容"></textarea>
               <button class="primary-button" type="submit">提交评价</button>
             </form>
+
+            <section class="subsection">
+              <div class="panel-header">
+                <h4>附件</h4>
+                <label class="file-button">
+                  上传附件
+                  <input type="file" @change="uploadAttachment" />
+                </label>
+              </div>
+              <div v-if="attachments.length" class="attachment-list">
+                <a v-for="file in attachments" :key="file.id" :href="file.file" target="_blank" rel="noreferrer">
+                  {{ file.original_filename }}
+                  <small>{{ formatFileSize(file.size) }} · {{ file.uploaded_by_username }}</small>
+                </a>
+              </div>
+              <p v-else class="muted">暂无附件。</p>
+            </section>
 
             <form class="inline-form" @submit.prevent="addComment">
               <textarea v-model.trim="commentForm.content" placeholder="补充评论或处理记录" required></textarea>
@@ -247,7 +319,10 @@
       <section v-if="activeView === 'notifications'" class="panel">
         <div class="panel-header">
           <h3>通知中心</h3>
-          <button class="secondary-button" @click="markAllRead">全部已读</button>
+          <div class="button-group">
+            <button class="secondary-button" @click="markAllRead">全部已读</button>
+            <button class="secondary-button" @click="clearReadNotifications">清理已读</button>
+          </div>
         </div>
         <div class="notification-list">
           <article v-for="item in notifications" :key="item.id" class="notification-item" :class="{ unread: !item.is_read }">
@@ -255,9 +330,58 @@
               <strong>{{ item.title }}</strong>
               <p>{{ item.message }}</p>
             </div>
-            <small>{{ formatDate(item.created_at) }}</small>
+            <div class="notification-side">
+              <small>{{ formatDate(item.created_at) }}</small>
+              <button v-if="!item.is_read" class="secondary-button small-button" @click="markNotificationRead(item.id)">已读</button>
+            </div>
           </article>
         </div>
+      </section>
+
+      <section v-if="activeView === 'account'" class="account-grid">
+        <form class="panel account-form" @submit.prevent="updateProfile">
+          <div class="panel-header">
+            <h3>个人资料</h3>
+          </div>
+          <label>
+            用户名
+            <input :value="currentUser?.username" disabled />
+          </label>
+          <label>
+            邮箱
+            <input v-model.trim="profileForm.email" autocomplete="email" placeholder="你的邮箱" type="email" />
+          </label>
+          <div class="form-grid">
+            <label>
+              名
+              <input v-model.trim="profileForm.first_name" autocomplete="given-name" />
+            </label>
+            <label>
+              姓
+              <input v-model.trim="profileForm.last_name" autocomplete="family-name" />
+            </label>
+          </div>
+          <button class="primary-button" type="submit">保存资料</button>
+        </form>
+
+        <form class="panel account-form" @submit.prevent="changePassword">
+          <div class="panel-header">
+            <h3>修改密码</h3>
+          </div>
+          <label>
+            旧密码
+            <input v-model="passwordForm.old_password" autocomplete="current-password" required type="password" />
+          </label>
+          <label>
+            新密码
+            <input v-model="passwordForm.new_password" autocomplete="new-password" required type="password" />
+          </label>
+          <label>
+            确认新密码
+            <input v-model="passwordForm.new_password_confirm" autocomplete="new-password" required type="password" />
+          </label>
+          <button class="primary-button" type="submit">修改密码</button>
+        </form>
       </section>
     </section>
   </main>
@@ -272,22 +396,42 @@ const currentUser = ref(null);
 const activeView = ref('dashboard');
 const loading = ref(false);
 const errorMessage = ref('');
+const successMessage = ref('');
 
 const summary = ref(null);
 const tickets = ref([]);
 const selectedTicket = ref(null);
 const timeline = ref([]);
+const attachments = ref([]);
 const notifications = ref([]);
 const unreadCount = ref(0);
 
 const showCreateTicket = ref(false);
+const showAssignForm = ref(false);
+const showPriorityForm = ref(false);
+const showTagForm = ref(false);
+const showReminderForm = ref(false);
 const showCloseForm = ref(false);
+const showReopenForm = ref(false);
 const showFeedbackForm = ref(false);
 const closeReason = ref('');
+const reopenReason = ref('');
 
 const loginForm = reactive({
   username: '',
   password: '',
+});
+
+const profileForm = reactive({
+  email: '',
+  first_name: '',
+  last_name: '',
+});
+
+const passwordForm = reactive({
+  old_password: '',
+  new_password: '',
+  new_password_confirm: '',
 });
 
 const ticketFilters = reactive({
@@ -303,6 +447,22 @@ const ticketForm = reactive({
   priority: 'medium',
 });
 
+const assignForm = reactive({
+  assignee: '',
+});
+
+const priorityForm = reactive({
+  priority: 'medium',
+});
+
+const tagForm = reactive({
+  ids: '',
+});
+
+const reminderForm = reactive({
+  message: '',
+});
+
 const commentForm = reactive({
   content: '',
   comment_type: 'comment',
@@ -316,12 +476,14 @@ const feedbackForm = reactive({
 const pageTitle = computed(() => {
   if (activeView.value === 'tickets') return '工单中心';
   if (activeView.value === 'notifications') return '通知中心';
+  if (activeView.value === 'account') return '账号设置';
   return '统计看板';
 });
 
 const pageSubtitle = computed(() => {
   if (activeView.value === 'tickets') return '查看、创建和跟进工单。';
   if (activeView.value === 'notifications') return '查看系统提醒和协作动态。';
+  if (activeView.value === 'account') return '维护个人资料和账号密码。';
   return '查看工单数量、状态分布和评价指标。';
 });
 
@@ -342,13 +504,56 @@ const satisfactionText = computed(() => {
   return `${Math.round(rate * 100)}%`;
 });
 
+const isWatching = computed(() => {
+  const names = selectedTicket.value?.watcher_usernames || [];
+  return names.includes(currentUser.value?.username);
+});
+
+function resetMessages() {
+  errorMessage.value = '';
+  successMessage.value = '';
+}
+
 function setError(error) {
+  successMessage.value = '';
   errorMessage.value = error?.message || '操作失败，请稍后重试。';
+}
+
+function setSuccess(message) {
+  errorMessage.value = '';
+  successMessage.value = message;
+}
+
+function syncProfileForm() {
+  // 后端的 me 接口是账号资料唯一可信来源，进入账号页或刷新后都用它回填表单。
+  profileForm.email = currentUser.value?.email || '';
+  profileForm.first_name = currentUser.value?.first_name || '';
+  profileForm.last_name = currentUser.value?.last_name || '';
+}
+
+function resetTicketForms() {
+  // 切换工单时收起所有动作表单，避免把上一张工单的操作误提交到下一张工单。
+  showAssignForm.value = false;
+  showPriorityForm.value = false;
+  showTagForm.value = false;
+  showReminderForm.value = false;
+  showCloseForm.value = false;
+  showReopenForm.value = false;
+  showFeedbackForm.value = false;
+  closeReason.value = '';
+  reopenReason.value = '';
+  reminderForm.message = '';
+}
+
+function fillTicketActionForms(ticket) {
+  assignForm.assignee = ticket.assignee || '';
+  priorityForm.priority = ticket.priority || 'medium';
+  tagForm.ids = (ticket.tags || []).join(',');
 }
 
 async function login() {
   loading.value = true;
-  errorMessage.value = '';
+  resetMessages();
   try {
     const data = await authApi.login(loginForm);
     token.value = data.access;
@@ -365,22 +570,36 @@ async function login() {
 function logout() {
   token.value = '';
   currentUser.value = null;
+  selectedTicket.value = null;
   localStorage.removeItem('flowdesk_access');
   localStorage.removeItem('flowdesk_refresh');
+}
+
+function switchView(view) {
+  activeView.value = view;
+  resetMessages();
+  if (view === 'account') {
+    syncProfileForm();
+  }
 }
 
 async function bootstrap() {
   if (!token.value) return;
   currentUser.value = await authApi.me(token.value);
+  syncProfileForm();
   await Promise.all([loadSummary(), loadTickets(), loadNotifications()]);
 }
 
 async function refreshCurrentView() {
-  errorMessage.value = '';
+  resetMessages();
   try {
     if (activeView.value === 'dashboard') await loadSummary();
     if (activeView.value === 'tickets') await loadTickets();
     if (activeView.value === 'notifications') await loadNotifications();
+    if (activeView.value === 'account') {
+      currentUser.value = await authApi.me(token.value);
+      syncProfileForm();
+    }
   } catch (error) {
     setError(error);
   }
@@ -399,11 +618,16 @@ async function loadTickets() {
 }
 
 async function openTicket(id) {
+  resetMessages();
   selectedTicket.value = await ticketApi.detail(token.value, id);
-  const data = await ticketApi.timeline(token.value, id);
-  timeline.value = data.results || [];
-  showCloseForm.value = false;
-  showFeedbackForm.value = false;
+  const [timelineData, attachmentData] = await Promise.all([
+    ticketApi.timeline(token.value, id),
+    ticketApi.attachments(token.value, id),
+  ]);
+  timeline.value = timelineData.results || [];
+  attachments.value = attachmentData.results || [];
+  resetTicketForms();
+  fillTicketActionForms(selectedTicket.value);
 }
 
 async function createTicket() {
@@ -416,9 +640,26 @@ async function createTicket() {
     showCreateTicket.value = false;
     await loadTickets();
     await loadSummary();
+    setSuccess('工单创建成功。');
   } catch (error) {
     setError(error);
   }
+}
+
+async function refreshSelectedTicket(message = '') {
+  if (!selectedTicket.value) return;
+  const id = selectedTicket.value.id;
+  selectedTicket.value = await ticketApi.detail(token.value, id);
+  const [timelineData, attachmentData] = await Promise.all([
+    ticketApi.timeline(token.value, id),
+    ticketApi.attachments(token.value, id),
+  ]);
+  timeline.value = timelineData.results || [];
+  attachments.value = attachmentData.results || [];
+  fillTicketActionForms(selectedTicket.value);
+  await loadTickets();
+  await loadSummary();
+  if (message) setSuccess(message);
 }
 
 async function addComment() {
@@ -427,7 +668,78 @@ async function addComment() {
     await ticketApi.addComment(token.value, selectedTicket.value.id, commentForm);
     commentForm.content = '';
     commentForm.comment_type = 'comment';
-    await openTicket(selectedTicket.value.id);
+    await refreshSelectedTicket('记录添加成功。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function assignSelectedTicket() {
+  if (!selectedTicket.value) return;
+  try {
+    const assignee = assignForm.assignee ? Number(assignForm.assignee) : null;
+    await ticketApi.assign(token.value, selectedTicket.value.id, assignee);
+    showAssignForm.value = false;
+    await refreshSelectedTicket('处理人已更新。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function clearAssignee() {
+  assignForm.assignee = '';
+  await assignSelectedTicket();
+}
+
+async function setSelectedPriority() {
+  if (!selectedTicket.value) return;
+  try {
+    await ticketApi.setPriority(token.value, selectedTicket.value.id, priorityForm.priority);
+    showPriorityForm.value = false;
+    await refreshSelectedTicket('优先级已更新。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function setSelectedTags() {
+  if (!selectedTicket.value) return;
+  try {
+    const tags = tagForm.ids
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
+      .map(Number);
+    await ticketApi.setTags(token.value, selectedTicket.value.id, tags);
+    showTagForm.value = false;
+    await refreshSelectedTicket('标签已更新。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function remindSelectedTicket() {
+  if (!selectedTicket.value) return;
+  try {
+    await ticketApi.remind(token.value, selectedTicket.value.id, reminderForm.message);
+    reminderForm.message = '';
+    showReminderForm.value = false;
+    await refreshSelectedTicket('催办已发送。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function toggleWatch() {
+  if (!selectedTicket.value) return;
+  try {
+    if (isWatching.value) {
+      await ticketApi.unwatch(token.value, selectedTicket.value.id);
+      await refreshSelectedTicket('已取消关注。');
+    } else {
+      await ticketApi.watch(token.value, selectedTicket.value.id);
+      await refreshSelectedTicket('已关注工单。');
+    }
   } catch (error) {
     setError(error);
   }
@@ -438,8 +750,18 @@ async function closeSelectedTicket() {
   try {
     await ticketApi.close(token.value, selectedTicket.value.id, closeReason.value);
     closeReason.value = '';
-    await openTicket(selectedTicket.value.id);
-    await loadSummary();
+    await refreshSelectedTicket('工单已关闭。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function reopenSelectedTicket() {
+  if (!selectedTicket.value) return;
+  try {
+    await ticketApi.reopen(token.value, selectedTicket.value.id, reopenReason.value);
+    reopenReason.value = '';
+    await refreshSelectedTicket('工单已重开。');
   } catch (error) {
     setError(error);
   }
@@ -451,8 +773,20 @@ async function submitFeedback() {
     await ticketApi.submitFeedback(token.value, selectedTicket.value.id, feedbackForm);
     feedbackForm.rating = 5;
     feedbackForm.content = '';
-    await openTicket(selectedTicket.value.id);
-    await loadSummary();
+    await refreshSelectedTicket('评价提交成功。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function uploadAttachment(event) {
+  if (!selectedTicket.value) return;
+  const [file] = event.target.files || [];
+  if (!file) return;
+  try {
+    await ticketApi.uploadAttachment(token.value, selectedTicket.value.id, file);
+    event.target.value = '';
+    await refreshSelectedTicket('附件上传成功。');
   } catch (error) {
     setError(error);
   }
@@ -471,6 +805,48 @@ async function markAllRead() {
   try {
     await notificationApi.markAllRead(token.value);
     await loadNotifications();
+    setSuccess('全部通知已标记为已读。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function markNotificationRead(id) {
+  try {
+    await notificationApi.markRead(token.value, id);
+    await loadNotifications();
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function clearReadNotifications() {
+  try {
+    await notificationApi.clearRead(token.value);
+    await loadNotifications();
+    setSuccess('已读通知已清理。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function updateProfile() {
+  try {
+    currentUser.value = await authApi.updateMe(token.value, profileForm);
+    syncProfileForm();
+    setSuccess('个人资料已保存。');
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function changePassword() {
+  try {
+    await authApi.changePassword(token.value, passwordForm);
+    passwordForm.old_password = '';
+    passwordForm.new_password = '';
+    passwordForm.new_password_confirm = '';
+    setSuccess('密码修改成功。');
   } catch (error) {
     setError(error);
   }
@@ -511,6 +887,12 @@ function formatDate(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
+}
+
+function formatFileSize(size) {
+  if (!size) return '0 KB';
+  if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
 onMounted(async () => {

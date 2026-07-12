@@ -142,6 +142,11 @@ textarea {
   margin: 0;
 }
 
+.success-text {
+  color: #047857;
+  margin: 0;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 252px minmax(0, 1fr);
@@ -249,6 +254,11 @@ textarea {
   padding: 12px 14px;
 }
 
+.notice.success-text {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
 .dashboard-grid {
   display: grid;
   gap: 16px;
@@ -304,6 +314,16 @@ textarea {
   display: flex;
   gap: 12px;
   justify-content: space-between;
+}
+
+.action-row.wrap,
+.button-group {
+  flex-wrap: wrap;
+}
+
+.button-group {
+  display: flex;
+  gap: 10px;
 }
 
 .bar-list,
@@ -441,6 +461,52 @@ textarea {
   padding: 14px;
 }
 
+.compact-form {
+  align-items: end;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+}
+
+.subsection {
+  border-bottom: 1px solid #e2e8f0;
+  border-top: 1px solid #e2e8f0;
+  margin: 16px 0;
+  padding: 16px 0;
+}
+
+.file-button {
+  background: #fff;
+  border: 1px solid #9fb0c4;
+  border-radius: 6px;
+  color: #1e293b;
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 38px;
+  padding: 8px 14px;
+}
+
+.file-button input {
+  display: none;
+}
+
+.attachment-list {
+  display: grid;
+  gap: 8px;
+}
+
+.attachment-list a {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #0f766e;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  text-decoration: none;
+}
+
+.attachment-list small {
+  color: #64748b;
+}
+
 .timeline {
   margin-top: 18px;
 }
@@ -470,9 +536,32 @@ textarea {
   justify-content: space-between;
 }
 
+.notification-side {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.small-button {
+  min-height: 30px;
+  padding: 5px 10px;
+}
+
 .notification-item.unread {
   border-color: #f59e0b;
   background: #fffbeb;
+}
+
+.account-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.account-form {
+  display: grid;
+  gap: 14px;
 }
 
 .empty-state {
@@ -499,6 +588,11 @@ textarea {
   }
 
   .filter-row {
+    grid-template-columns: 1fr;
+  }
+
+  .account-grid,
+  .compact-form {
     grid-template-columns: 1fr;
   }
 }
