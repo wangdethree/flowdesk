@@ -834,6 +834,16 @@ async function loadSummary() {
 async function loadTickets() {
   const data = await ticketApi.list(token.value, ticketFilters);
   tickets.value = data.results || [];
+
+  // 重新筛选后，当前详情可能已经不在左侧列表里。
+  // 这时主动切到第一条结果，避免出现“列表是 A 条件，详情还是旧工单”的错位感。
+  const selectedStillVisible = tickets.value.some((ticket) => ticket.id === selectedTicket.value?.id);
+  if (selectedTicket.value && !selectedStillVisible) {
+    selectedTicket.value = null;
+    timeline.value = [];
+    attachments.value = [];
+  }
+
   if (!selectedTicket.value && tickets.value.length) {
     await openTicket(tickets.value[0].id);
   }
