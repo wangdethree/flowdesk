@@ -93,6 +93,16 @@ export const dashboardApi = {
   },
 };
 
+export const assistantApi = {
+  draftTicket(token, rawText) {
+    // 根据自然语言描述生成工单草稿，当前后端是规则引擎，后续可以替换成大模型。
+    return request('/api/ai/ticket-draft/', { token, method: 'POST', body: { raw_text: rawText } });
+  },
+  ticketSuggestion(token, id) {
+    return request(`/api/ai/tickets/${id}/suggestion/`, { token });
+  },
+};
+
 export const ticketApi = {
   list(token, params = {}) {
     const search = new URLSearchParams();
