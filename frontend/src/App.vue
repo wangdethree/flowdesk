@@ -515,7 +515,7 @@
             <button class="secondary-button" @click="clearReadNotifications">清理已读</button>
           </div>
         </div>
-        <form class="filter-row notification-filter" @submit.prevent="loadNotifications">
+        <form class="filter-row notification-filter" @submit.prevent="applyNotificationFilters">
           <input v-model.trim="notificationFilters.search" placeholder="搜索通知标题或内容" />
           <select v-model="notificationFilters.is_read">
             <option value="">全部状态</option>
@@ -545,6 +545,17 @@
               <button v-if="!item.is_read" class="secondary-button small-button" @click="markNotificationRead(item.id)">已读</button>
             </div>
           </article>
+        </div>
+        <div class="pagination-row">
+          <span>共 {{ notificationPagination.count }} 条 · 第 {{ notificationFilters.page }} 页</span>
+          <div class="button-group">
+            <button class="secondary-button small-button" :disabled="!notificationPagination.previous" @click="changeNotificationPage(-1)">
+              上一页
+            </button>
+            <button class="secondary-button small-button" :disabled="!notificationPagination.next" @click="changeNotificationPage(1)">
+              下一页
+            </button>
+          </div>
         </div>
       </section>
 
@@ -714,6 +725,13 @@ const notificationFilters = reactive({
   search: '',
   is_read: '',
   notification_type: '',
+  page: 1,
+});
+
+const notificationPagination = reactive({
+  count: 0,
+  next: null,
+  previous: null,
 });
 
 const ticketForm = reactive({
@@ -1277,7 +1295,23 @@ async function loadNotifications() {
     notificationApi.unreadCount(token.value),
   ]);
   notifications.value = list.results || [];
+  notificationPagination.count = list.count || 0;
+  notificationPagination.next = list.next;
+  notificationPagination.previous = list.previous;
   unreadCount.value = count.unread_count || 0;
+}
+
+async function applyNotificationFilters() {
+  // 通知筛选和工单筛选一样，条件变化后回到第一页。
+  notificationFilters.page = 1;
+  await loadNotifications();
+}
+
+async function changeNotificationPage(offset) {
+  const nextPage = notificationFilters.page + offset;
+  if (nextPage < 1) return;
+  notificationFilters.page = nextPage;
+  await loadNotifications();
 }
 
 async function markAllRead() {
